@@ -273,6 +273,21 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
   </div>
 </div>
 
+<!-- SHARE TASK MODAL -->
+<div class="ov" id="shareOv">
+  <div class="modal">
+    <h3>👥 Topshiriqni ulashish <button class="m-close" onclick="closeOv('shareOv')">✕</button></h3>
+    <p style="font-size:13px;color:var(--sub);margin-bottom:12px">Foydalanuvchining username (email) ni kiriting:</p>
+    <input class="m-inp" id="shareEmail" placeholder="username@email.com">
+    <select class="m-inp" id="sharePerm" style="margin-bottom:12px">
+      <option value="view">Ko'rish (view)</option>
+      <option value="edit">Tahrirlash (edit)</option>
+    </select>
+    <button class="m-btn c-p" onclick="doShare()">📤 Ulashish</button>
+    <div id="shareList" style="margin-top:12px"></div>
+  </div>
+</div>
+
 <!-- EDIT LIST NAME MODAL -->
 <div class="ov" id="editListOv">
   <div class="modal">
@@ -469,7 +484,16 @@ function renderRing(pct) {
 async function ckGoogle(e) {
   try {
     const r = await fetch('/auth/google/status');
-    if (r.ok) { const d = await r.json(); if (!d.configured) { e.preventDefault(); const err = document.getElementById('aerr'); err.textContent = "Google login sozlanmagan."; err.style.display = 'block'; return false; } }
+    if (r.ok) {
+      const d = await r.json();
+      if (!d.configured) {
+        e.preventDefault();
+        const err = document.getElementById('aerr');
+        err.innerHTML = 'Google login sozlanmagan.<br><small>Railway da <b>GOOGLE_CLIENT_ID</b> va <b>GOOGLE_CLIENT_SECRET</b> va <b>GOOGLE_CALLBACK_URL</b> ni environment variables ga qo'shing.</small>';
+        err.style.display = 'block';
+        return false;
+      }
+    }
   } catch {}
   return true;
 }
@@ -719,6 +743,7 @@ function mkNode(task, depth) {
           </select>
           <button class="t-btn c-blue" onclick="toggleCI('${task.id}')" title="Quyi topshiriq qo'shish">＋ Quyi</button>
           <button class="t-btn c-gray" onclick="openEditName('${task.id}')" title="Nomni o'zgartirish">✏️</button>
+          <button class="t-btn" style="background:#e8d4f0;color:#6f42c1" onclick="openShare('${task.id}')" title="Ulashish">👥</button>
           <button class="t-btn c-ok"   onclick="archTask('${task.id}')" title="Arxivga yuborish">📦</button>
           <button class="t-btn c-red"  onclick="delTask('${task.id}')" title="O'chirish">🗑️</button>
         </div>
@@ -849,6 +874,37 @@ async function delComment(cid) {
     await api('DELETE', `/api/comments/${cid}`);
     if (detailTaskId) { const l = listOf(detailTaskId); if (l) { const t = findInTree(l.tasks || [], detailTaskId); if (t) { t.comments = (t.comments || []).filter(c => c.id !== cid); renderDetailComments(t.comments); render(); } } }
   } catch (e) { notify(e.message, 'err'); }
+}
+
+// ══════════════════════════════════════════
+// SHARE TASK
+// ══════════════════════════════════════════
+let shareTaskId = null;
+function openShare(taskId) {
+  shareTaskId = taskId;
+  document.getElementById('shareEmail').value = '';
+  document.getElementById('shareList').innerHTML = '';
+  openOv('shareOv');
+  // Mavjud ulashishlarni yuklash
+  loadShareList(taskId);
+}
+async function loadShareList(taskId) {
+  // shared_tasks dan bu task uchun ulashishlarni ko'rsatamiz
+  // (server endpoint yo'q, lekin shared-to-me dan ko'rsatamiz)
+}
+async function doShare() {
+  const email = document.getElementById('shareEmail').value.trim();
+  const perm  = document.getElementById('sharePerm').value;
+  if (!email) { notify('Email kiriting', 'err'); return; }
+  if (!shareTaskId) return;
+  load(true);
+  try {
+    await api('POST', `/api/tasks/${shareTaskId}/share`, { email, permission: perm });
+    notify(`${email} ga ulashildi 📤`);
+    document.getElementById('shareEmail').value = '';
+    closeOv('shareOv');
+  } catch(e) { notify('Xatolik: ' + e.message, 'err'); }
+  finally { load(false); }
 }
 
 // ══════════════════════════════════════════
