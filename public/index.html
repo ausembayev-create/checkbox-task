@@ -395,10 +395,23 @@ let detailTaskId = null;
 const openCI = new Set(), collapsed = new Set();
 let editNameTaskId = null, editListId = null;
 
-// Google token from URL
+// Google token URL dan olinishi
 (() => {
-  const p = new URLSearchParams(location.search), t = p.get('token');
+  const p = new URLSearchParams(location.search);
+  const t = p.get('token'), authErr = p.get('auth_error');
   if (t) { localStorage.setItem('cbtoken', t); token = t; history.replaceState({}, '', '/'); }
+  if (authErr) {
+    history.replaceState({}, '', '/');
+    setTimeout(() => {
+      const el = document.getElementById('aerr');
+      if (el) {
+        el.textContent = authErr === 'google_not_configured'
+          ? "Google login sozlanmagan. Railway da GOOGLE_CLIENT_ID va GOOGLE_CLIENT_SECRET o'rnating."
+          : "Google orqali kirish muvaffaqiyatsiz. Qayta urinib ko'ring yoki username/parol ishlating.";
+        el.style.display = 'block';
+      }
+    }, 400);
+  }
 })();
 
 // ══════════════════════════════════════════
@@ -511,19 +524,29 @@ function toggleMode() {
   document.getElementById('aerr').style.display = 'none';
 }
 async function authSubmit() {
-  const u = document.getElementById('aUser').value.trim(), p = document.getElementById('aPass').value, n = document.getElementById('aName').value.trim(), e = document.getElementById('aerr');
-  e.style.display = 'none';
-  if (!u || !p) { e.textContent = 'Username va parol kiriting'; e.style.display = 'block'; return; }
+  const u = document.getElementById('aUser').value.trim();
+  const p = document.getElementById('aPass').value;
+  const n = document.getElementById('aName').value.trim();
+  const e = document.getElementById('aerr');
+  e.style.display = 'none'; e.textContent = '';
+  if (!u) { e.textContent = 'Username kiriting'; e.style.display = 'block'; return; }
+  if (!p) { e.textContent = 'Parol kiriting'; e.style.display = 'block'; return; }
   if (mode === 'register' && !n) { e.textContent = 'Ism kiriting'; e.style.display = 'block'; return; }
   load(true);
   try {
     const d = await api('POST', mode === 'login' ? '/api/login' : '/api/register', { username: u, password: p, name: n });
+    if (!d || !d.token) throw new Error('Server javob bermadi');
     token = d.token; me = d.user;
-    localStorage.setItem('cbtoken', token); localStorage.setItem('cbuser', JSON.stringify(me));
+    localStorage.setItem('cbtoken', token);
+    localStorage.setItem('cbuser', JSON.stringify(me));
     document.getElementById('authOv').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
-    showUser(); await loadAll(); notify(`Xush kelibsiz, ${me.name}! 👋`);
-  } catch (err) { e.textContent = err.message; e.style.display = 'block'; }
+    showUser(); await loadAll();
+    notify('Xush kelibsiz, ' + me.name + '! 👋');
+  } catch (err) {
+    e.textContent = err.message || 'Xatolik yuz berdi';
+    e.style.display = 'block';
+  }
   finally { load(false); }
 }
 document.addEventListener('keypress', ev => { if (ev.key === 'Enter' && document.getElementById('authOv').style.display !== 'none') authSubmit(); });

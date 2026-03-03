@@ -18,7 +18,7 @@ if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 // ── DB ──
 function loadDB() {
   if (!fs.existsSync(DATA_FILE)) {
-    const e = { users:[], lists:[], tasks:[], files:[], archive:[], shared_tasks:[], comments:[] };
+    const e = { users:[], lists:[], tasks:[], files:[], archive:[], shared_tasks:[], comments:[], sessions:{} };
     fs.writeFileSync(DATA_FILE, JSON.stringify(e, null, 2));
     return e;
   }
@@ -28,6 +28,7 @@ function loadDB() {
     if (!db.archive)      db.archive  = [];
     if (!db.shared_tasks) db.shared_tasks = [];
     if (!db.files)        db.files    = [];
+    if (!db.sessions)     db.sessions = {};
     return db;
   } catch {
     return { users:[], lists:[], tasks:[], files:[], archive:[], shared_tasks:[], comments:[] };
@@ -78,13 +79,37 @@ if (GOOGLE_CLIENT_ID) {
 app.get('/auth/google/status', (req, res) => res.json({ configured: !!GOOGLE_CLIENT_ID }));
 
 // ── HELPERS ──
-const sessions = {};
 const nid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-const mkToken = (user) => { const t = nid(); sessions[t] = user; return t; };
 const safeUser = (u) => ({ id: u.id, username: u.username, name: u.name, surname: u.surname || '', patronymic: u.patronymic || '', avatar: u.avatar || '', bg: u.bg || '' });
+
+// Tokenlar data.json ga saqlanadi — Railway restart bo'lsa ham yo'qolmaydi
+function mkToken(user) {
+  const t = nid();
+  const db = loadDB();
+  if (!db.sessions) db.sessions = {};
+  db.sessions[t] = { userId: user.id, created: Date.now() };
+  saveDB(db);
+  return t;
+}
+function getSession(token) {
+  if (!token) return null;
+  const db = loadDB();
+  const sess = (db.sessions || {})[token];
+  if (!sess) return null;
+  // 30 kundan eski tokenlarni o'chirish
+  if (Date.now() - sess.created > 30 * 24 * 60 * 60 * 1000) {
+    delete db.sessions[token]; saveDB(db); return null;
+  }
+  return db.users.find(u => u.id === sess.userId) || null;
+}
+function deleteSession(token) {
+  const db = loadDB();
+  if (db.sessions && db.sessions[token]) { delete db.sessions[token]; saveDB(db); }
+}
 function auth(req, res, next) {
   const t = req.headers['x-token'];
-  if (t && sessions[t]) { req.user = sessions[t]; return next(); }
+  const user = getSession(t);
+  if (user) { req.user = user; return next(); }
   res.status(401).json({ error: 'Login kerak' });
 }
 const fmtFile = f => ({ id: f.id, name: f.name, url: '/uploads/' + f.filename, type: f.mimetype, size: f.size });
@@ -127,12 +152,12 @@ app.post('/api/login', (req, res) => {
   res.json({ token: mkToken(user), user: safeUser(user) });
 });
 app.get('/api/me', (req, res) => {
-  const t = req.headers['x-token']; if (!t || !sessions[t]) return res.status(401).json({ error: 'Unauthorized' });
-  const db = loadDB(); const user = db.users.find(u => u.id === sessions[t].id);
+  const t = req.headers['x-token'];
+  const user = getSession(t);
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
-  sessions[t] = user; res.json(safeUser(user));
+  res.json(safeUser(user));
 });
-app.post('/api/logout', (req, res) => { delete sessions[req.headers['x-token']]; res.json({ ok: true }); });
+app.post('/api/logout', (req, res) => { deleteSession(req.headers['x-token']); res.json({ ok: true }); });
 
 // ── PROFIL ──
 app.put('/api/profile', auth, (req, res) => {
@@ -143,7 +168,7 @@ app.put('/api/profile', auth, (req, res) => {
   if (surname    !== undefined) user.surname    = surname.trim();
   if (patronymic !== undefined) user.patronymic = patronymic.trim();
   if (bg         !== undefined) user.bg         = bg;
-  saveDB(db); sessions[req.headers['x-token']] = user; res.json(safeUser(user));
+  saveDB(db); res.json(safeUser(user));
 });
 app.post('/api/profile/avatar', auth, upload.single('avatar'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: "Fayl yo'q" });
@@ -151,14 +176,14 @@ app.post('/api/profile/avatar', auth, upload.single('avatar'), (req, res) => {
   if (!user) return res.status(404).json({ error: 'Topilmadi' });
   if (user.avatar && user.avatar.startsWith('/uploads/')) { const old = path.join(UPLOADS_DIR, path.basename(user.avatar)); if (fs.existsSync(old)) try { fs.unlinkSync(old); } catch {} }
   user.avatar = '/uploads/' + req.file.filename;
-  saveDB(db); sessions[req.headers['x-token']] = user; res.json({ avatar: user.avatar });
+  saveDB(db); res.json({ avatar: user.avatar });
 });
 app.post('/api/profile/bg', auth, upload.single('bg'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: "Fayl yo'q" });
   const db = loadDB(); const user = db.users.find(u => u.id === req.user.id);
   if (!user) return res.status(404).json({ error: 'Topilmadi' });
   user.bg = '/uploads/' + req.file.filename;
-  saveDB(db); sessions[req.headers['x-token']] = user; res.json({ bg: user.bg });
+  saveDB(db); res.json({ bg: user.bg });
 });
 
 // ── LISTS ──
