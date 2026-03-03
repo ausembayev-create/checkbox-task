@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 3001;
 const GOOGLE_CLIENT_ID     = process.env.GOOGLE_CLIENT_ID     || '';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
-const DATA_FILE   = path.join(__dirname, 'data.json');
+const DATA_FILE   = process.env.DATA_PATH || path.join(__dirname, 'data.json');
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 // ── DB ──
@@ -246,7 +246,14 @@ app.post('/api/tasks/:id/archive', auth, (req, res) => {
   const list = db.lists.find(l => l.id === task.list_id && l.user_id === req.user.id);
   if (!list) return res.status(403).json({ error: "Ruxsat yo'q" });
   const tree = buildTaskTree(task.id, db);
-  db.archive.push({ id: nid(), user_id: String(req.user.id), task_data: JSON.stringify(tree), from_list: list.title, list_id: list.id, archived_at: Date.now() });
+  // parent_id ni ham saqlaymiz — qaytarilganda original joyiga tiklash uchun
+  db.archive.push({
+    id: nid(), user_id: String(req.user.id),
+    task_data: JSON.stringify(tree),
+    from_list: list.title, list_id: list.id,
+    parent_id: task.parent_id || null,  // original parent
+    archived_at: Date.now()
+  });
   deleteTaskDeep(task.id, db); saveDB(db); res.json({ ok: true });
 });
 app.post('/api/lists/:lid/archive-completed', auth, (req, res) => {
@@ -286,7 +293,6 @@ app.get('/api/archive', auth, (req, res) => {
 // ARXIVDAN QAYTARISH
 app.post('/api/archive/:id/unarchive', auth, (req, res) => {
   const db = loadDB();
-  // Sodda: faqat ID bo'yicha topamiz, GET da faqat o'z arxivi ko'rinadi
   const idx = db.archive.findIndex(a => String(a.id) === String(req.params.id));
   if (idx === -1) {
     console.log('[UNARCHIVE] topilmadi. Soralgan ID:', req.params.id, '| Mavjud IDlar:', db.archive.map(a=>a.id));
@@ -295,18 +301,38 @@ app.post('/api/archive/:id/unarchive', auth, (req, res) => {
   const row = db.archive[idx];
   let td;
   try { td = JSON.parse(row.task_data); } catch(e) { return res.status(500).json({ error: 'task_data parse xatosi' }); }
+
+  // Ro'yxatni topamiz
   let list = db.lists.find(l => l.id === row.list_id && l.user_id === req.user.id)
           || db.lists.find(l => l.user_id === req.user.id && l.title === row.from_list);
   if (!list) {
     list = { id: nid(), user_id: req.user.id, title: row.from_list || 'Arxivdan', created_at: Date.now() };
     db.lists.push(list);
   }
+
+  // Original parent hali mavjudmi? — mavjud bo'lsa, shu parentga qo'shamiz (ierarxiyani saqlash)
+  let rootParentId = null;
+  if (row.parent_id) {
+    const parentExists = db.tasks.find(t => t.id === row.parent_id && t.list_id === list.id);
+    if (parentExists) {
+      rootParentId = row.parent_id;
+      console.log('[UNARCHIVE] parent topildi, ierarxiyaga qaytariladi:', row.parent_id);
+    } else {
+      console.log('[UNARCHIVE] parent topilmadi, root sifatida qaytariladi');
+    }
+  }
+
   function restoreTask(node, parentId) {
     const newId = nid();
-    db.tasks.push({ id: newId, list_id: list.id, parent_id: parentId || null, user_id: req.user.id, text: node.text || '', completed: false, priority: node.priority || 'medium', status: 'todo', deadline: node.deadline || null, created_at: Date.now() });
+    db.tasks.push({
+      id: newId, list_id: list.id, parent_id: parentId || null,
+      user_id: req.user.id, text: node.text || '',
+      completed: false, priority: node.priority || 'medium',
+      status: 'todo', deadline: node.deadline || null, created_at: Date.now()
+    });
     (node.children || []).forEach(c => restoreTask(c, newId));
   }
-  restoreTask(td, null);
+  restoreTask(td, rootParentId);
   db.archive.splice(idx, 1);
   saveDB(db);
   res.json({ ok: true, listId: list.id });
