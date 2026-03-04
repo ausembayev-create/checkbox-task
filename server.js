@@ -415,7 +415,15 @@ app.get('/api/shared-to-me', auth, (req, res) => {
   const db = loadDB();
   res.json(db.shared_tasks.filter(s => s.recipient_email === req.user.username).sort((a, b) => b.created_at - a.created_at).map(r => {
     const owner = db.users.find(u => u.id === r.owner_id);
-    return { id: r.id, taskData: JSON.parse(r.task_data), ownerName: owner?.name || '', permission: r.permission, status: r.status };
+    // Topshiriqning hozirgi holatini ham yuboramiz (agar hali mavjud bo'lsa)
+    let taskData;
+    try { taskData = JSON.parse(r.task_data); } catch { taskData = {}; }
+    // Hozirgi task ma'lumotlarini yangilash
+    const liveTask = db.tasks.find(t => t.id === taskData.id);
+    if (liveTask) {
+      taskData = { ...taskData, text: liveTask.text, completed: liveTask.completed, priority: liveTask.priority, status: liveTask.status };
+    }
+    return { id: r.id, taskData, ownerName: owner?.name || '', ownerEmail: owner?.username || '', permission: r.permission, status: r.status, taskId: taskData.id };
   }));
 });
 app.put('/api/shared/:id/accept', auth, (req, res) => {
@@ -425,6 +433,61 @@ app.put('/api/shared/:id/accept', auth, (req, res) => {
 app.delete('/api/shared/:id', auth, (req, res) => {
   const db = loadDB(); db.shared_tasks = db.shared_tasks.filter(s => !(s.id === req.params.id && s.recipient_email === req.user.username));
   saveDB(db); res.json({ ok: true });
+});
+
+// ── SHARED TASK OPERATIONS ──
+// Ulashilgan topshiriqqa quyi topshiriq qo'shish (tahrirlash huquqi bo'lsa)
+app.post('/api/shared-task/:sid/add-child', auth, (req, res) => {
+  const db = loadDB();
+  const share = db.shared_tasks.find(s => s.id === req.params.sid && s.recipient_email === req.user.username);
+  if (!share) return res.status(404).json({ error: 'Topilmadi' });
+  if (share.permission !== 'edit') return res.status(403).json({ error: "Tahrirlash huquqi yo'q" });
+  const parentTaskId = req.body.parentTaskId;
+  const parentTask = db.tasks.find(t => t.id === parentTaskId);
+  if (!parentTask) return res.status(404).json({ error: 'Asosiy topshiriq topilmadi' });
+  // Yangi quyi topshiriq yaratamiz
+  const newTask = {
+    id: nid(), list_id: parentTask.list_id, parent_id: parentTaskId,
+    user_id: parentTask.user_id, // Egasining nomidan
+    text: req.body.text.trim(), completed: false,
+    priority: 'medium', status: 'todo', deadline: null, created_at: Date.now()
+  };
+  db.tasks.push(newTask);
+  // Shared task_data ni yangilaymiz
+  try {
+    const td = JSON.parse(share.task_data);
+    if (!td.children) td.children = [];
+    td.children.push({ id: newTask.id, text: newTask.text, completed: false, children: [] });
+    share.task_data = JSON.stringify(td);
+  } catch {}
+  saveDB(db);
+  res.json({ ok: true, task: newTask });
+});
+
+// ── SHARED TASK OPERATIONS ──
+// Ulashilgan topshiriqqa quyi topshiriq qo'shish
+app.post('/api/shared-task/:sid/add-child', auth, (req, res) => {
+  const db = loadDB();
+  const share = db.shared_tasks.find(s => s.id === req.params.sid && s.recipient_email === req.user.username);
+  if (!share) return res.status(404).json({ error: 'Topilmadi' });
+  if (share.permission !== 'edit') return res.status(403).json({ error: "Tahrirlash huquqi yo'q" });
+  const parentTaskId = req.body.parentTaskId;
+  const parentTask = db.tasks.find(t => t.id === parentTaskId);
+  if (!parentTask) return res.status(404).json({ error: 'Asosiy topshiriq topilmadi' });
+  const newTask = {
+    id: nid(), list_id: parentTask.list_id, parent_id: parentTaskId,
+    user_id: parentTask.user_id, text: (req.body.text || '').trim(),
+    completed: false, priority: 'medium', status: 'todo', deadline: null, created_at: Date.now()
+  };
+  db.tasks.push(newTask);
+  try {
+    const td = JSON.parse(share.task_data);
+    if (!td.children) td.children = [];
+    td.children.push({ id: newTask.id, text: newTask.text, completed: false, children: [] });
+    share.task_data = JSON.stringify(td);
+  } catch {}
+  saveDB(db);
+  res.json({ ok: true, task: newTask });
 });
 
 // ── DEBUG (faqat development) ──

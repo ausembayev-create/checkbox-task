@@ -936,19 +936,96 @@ async function doShare() {
 function renderShared() {
   const C = document.getElementById('taskPanelContent');
   if (!shared.length) { C.innerHTML = '<div class="empty"><div class="empty-ic">📥</div><p>Hech narsa ulashilmagan</p></div>'; return; }
-  C.innerHTML = shared.map(s => `
-    <div class="sh-card">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
-        <div>
-          <div style="font-weight:600;font-size:15px">${clean(s.taskData.text)}</div>
-          <div style="font-size:12px;color:var(--sub);margin-top:4px">👤 ${clean(s.ownerName)} · ${s.permission} · ${s.status === 'pending' ? '⏳ Kutilmoqda' : '✅ Qabul qilingan'}</div>
+  let html = '';
+  shared.forEach(s => {
+    const td = s.taskData || {};
+    const kids = td.children || [];
+    const canEdit = s.permission === 'edit';
+    const isPending = s.status === 'pending';
+    html += `<div class="sh-card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px">
+        <div style="flex:1">
+          <div style="font-weight:700;font-size:16px">${clean(td.text || '')}</div>
+          <div style="font-size:12px;color:var(--sub);margin-top:3px">
+            👤 ${clean(s.ownerName)} · ${canEdit ? '✏️ Tahrirlash' : '👁 Faqat ko\'rish'} · ${isPending ? '⏳ Kutilmoqda' : '✅ Qabul qilingan'}
+          </div>
         </div>
-        <div style="display:flex;gap:7px">
-          ${s.status === 'pending' ? `<button class="ibtn c-ok" onclick="acceptShare('${s.id}')">✓ Qabul</button>` : ''}
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          ${isPending ? `<button class="ibtn c-ok" onclick="acceptShare('${s.id}')">✓ Qabul</button>` : ''}
           <button class="ibtn c-no" onclick="rejectShare('${s.id}')">✗ Bekor</button>
         </div>
-      </div>
-    </div>`).join('');
+      </div>`;
+    if (!isPending) {
+      html += `<div style="border-top:1px solid var(--border);padding-top:10px">`;
+      // Asosiy topshiriq
+      html += `<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+        <input type="checkbox" ${td.completed ? 'checked' : ''} ${!canEdit ? 'disabled' : ''} onchange="shToggle('${s.id}',this.checked)" style="width:16px;height:16px">
+        <span style="font-size:14px;font-weight:600;${td.completed ? 'text-decoration:line-through;opacity:.6' : ''}">${clean(td.text||'')}</span>
+        <button class="ibtn c-gray" style="margin-left:auto;padding:3px 8px;font-size:11px" onclick="openSharedDetail('${s.id}')">🔍 Ko'rish</button>
+      </div>`;
+      // Quyi topshiriqlar
+      if (kids.length) {
+        html += `<div style="margin-left:20px;border-left:2px solid var(--border);padding-left:10px;margin-top:4px">`;
+        kids.forEach((c,ci) => {
+          html += `<div style="display:flex;align-items:center;gap:6px;padding:3px 0">
+            <input type="checkbox" ${c.completed?'checked':''} ${!canEdit?'disabled':''} style="width:14px;height:14px">
+            <span style="font-size:13px;${c.completed?'text-decoration:line-through;opacity:.6':''}">${clean(c.text||'')}</span>
+            ${(c.children||[]).length ? `<span style="font-size:11px;color:var(--sub)">+${c.children.length}</span>` : ''}
+          </div>`;
+        });
+        html += `</div>`;
+      }
+      // Yangi quyi topshiriq qo'shish (faqat tahrirlash huquqida)
+      if (canEdit) {
+        html += `<div style="display:flex;gap:6px;margin-top:8px">
+          <input class="sub-inp" id="shInp_${s.id}" placeholder="Yangi quyi topshiriq... (Enter)" style="flex:1;padding:5px 8px;font-size:13px" onkeypress="if(event.key==='Enter')addSharedChild('${s.id}','${td.id||''}')">
+          <button class="ibtn c-ok" onclick="addSharedChild('${s.id}','${td.id||''}')">＋ Qo'sh</button>
+        </div>`;
+      }
+      html += `</div>`;
+    }
+    html += `</div>`;
+  });
+  C.innerHTML = html;
+}
+
+function openSharedDetail(shareId) {
+  const s = shared.find(x => x.id === shareId);
+  if (!s) return;
+  const td = s.taskData || {};
+  const dp = document.getElementById('detailPanel');
+  document.getElementById('dpTitle').textContent = td.text || '';
+  renderDetailFiles(td.files || []);
+  const commDiv = document.getElementById('dpComments');
+  commDiv.innerHTML = (td.comments||[]).length
+    ? (td.comments||[]).map(c => `<div class="comment-item"><span class="comment-author">${clean(c.author)}</span><span class="comment-text">${clean(c.text)}</span></div>`).join('')
+    : '<div style="color:var(--sub);font-size:13px;padding:8px 0">Izohlar yo\'q</div>';
+  dp.classList.remove('hidden');
+  detailTaskId = null;
+}
+
+async function shToggle(shareId, checked) {
+  // Ulashilgan topshiriqni belgilash — faqat ko'rsatish uchun (server da task egasida)
+  const s = shared.find(x => x.id === shareId);
+  if (!s || s.permission !== 'edit') return;
+  if (s.taskData) s.taskData.completed = checked;
+  renderShared();
+  notify(checked ? 'Bajarildi deb belgilandi ✅' : 'Bajarilmagan deb belgilandi');
+}
+
+async function addSharedChild(shareId, taskId) {
+  const inp = document.getElementById('shInp_' + shareId);
+  if (!inp) return;
+  const text = inp.value.trim();
+  if (!text) { notify('Matn kiriting', 'err'); return; }
+  const s = shared.find(x => x.id === shareId);
+  if (!s || s.permission !== 'edit') { notify("Tahrirlash huquqi yo'q", 'err'); return; }
+  // Quyi topshiriqni lokal ko'rsatamiz
+  if (!s.taskData.children) s.taskData.children = [];
+  s.taskData.children.push({ text, completed: false, children: [] });
+  inp.value = '';
+  renderShared();
+  notify("Quyi topshiriq ko'rsatildi (egasiga xabar bering)");
 }
 
 // ══════════════════════════════════════════
