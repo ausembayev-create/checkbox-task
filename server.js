@@ -189,14 +189,43 @@ app.post('/api/profile/bg', auth, upload.single('bg'), (req, res) => {
 // ── LISTS ──
 app.get('/api/lists', auth, (req, res) => {
   const db = loadDB();
-  // O'z ro'yxatlari + ulashilgan topshiriqlar ro'yxati
   const myLists = db.lists.filter(l => l.user_id === req.user.id);
-  res.json(myLists.sort((a, b) => {
-    // Ulashilgan topshiriqlar ro'yxati doim oxirida
+  const result = myLists.sort((a, b) => {
     if (a.is_shared_inbox) return 1;
     if (b.is_shared_inbox) return -1;
     return a.created_at - b.created_at;
-  }).map(l => ({ ...l, tasks: listTasks(l.id, db) })));
+  }).map(l => ({ ...l, tasks: listTasks(l.id, db) }));
+
+  // Qabul qilingan ulashilgan topshiriqlarni "Ulashilgan topshiriqlar" ro'yxatida ko'rsatish
+  // Asl task dan real-time ma'lumot olamiz
+  const accepted = db.shared_tasks.filter(s =>
+    s.recipient_email === req.user.username && s.status === 'accepted'
+  );
+  if (accepted.length > 0) {
+    let sharedList = result.find(l => l.is_shared_inbox);
+    if (!sharedList) {
+      // DB dan topamiz yoki yaratamiz
+      let sl = db.lists.find(l => l.user_id === req.user.id && l.is_shared_inbox);
+      if (!sl) {
+        sl = { id: nid(), user_id: req.user.id, title: 'Ulashilgan topshiriqlar', is_shared_inbox: true, created_at: Date.now() };
+        db.lists.push(sl); saveDB(db);
+      }
+      sharedList = { ...sl, tasks: [] };
+      result.push(sharedList);
+    }
+    // Har bir qabul qilingan share uchun asl topshiriqni olamiz
+    const sharedTasks = [];
+    accepted.forEach(s => {
+      const task = db.tasks.find(t => t.id === s.task_id);
+      if (task) {
+        const tree = buildTaskTree(task.id, db);
+        if (tree) sharedTasks.push({ ...tree, _shared: true, _shareId: s.id, _permission: s.permission, _ownerEmail: '' });
+      }
+    });
+    sharedList.tasks = sharedTasks;
+  }
+
+  res.json(result);
 });
 app.post('/api/lists', auth, (req, res) => {
   if (!req.body.title?.trim()) return res.status(400).json({ error: 'Nom kerak' });
@@ -227,7 +256,20 @@ app.post('/api/tasks/:pid/children', auth, (req, res) => {
   const db = loadDB(); const parent = db.tasks.find(t => t.id === req.params.pid);
   if (!parent) return res.status(404).json({ error: 'Topilmadi' });
   const list = db.lists.find(l => l.id === parent.list_id && l.user_id === req.user.id);
-  if (!list) return res.status(403).json({ error: "Ruxsat yo'q" });
+  if (!list) {
+    const rootTask = (function findRoot(t) {
+      if (!t.parent_id) return t;
+      const p = db.tasks.find(x => x.id === t.parent_id);
+      return p ? findRoot(p) : t;
+    })(parent);
+    const share = db.shared_tasks.find(s =>
+      s.task_id === rootTask.id &&
+      s.recipient_email === req.user.username &&
+      s.status === 'accepted' &&
+      s.permission === 'edit'
+    );
+    if (!share) return res.status(403).json({ error: "Ruxsat yo'q" });
+  }
   const task = { id: nid(), list_id: parent.list_id, parent_id: req.params.pid, user_id: req.user.id, text: req.body.text.trim(), completed: false, priority: parent.priority || 'medium', status: 'todo', deadline: req.body.deadline || null, created_at: Date.now() };
   db.tasks.push(task); saveDB(db); res.json(buildTaskTree(task.id, db));
 });
@@ -235,7 +277,21 @@ app.put('/api/tasks/:id', auth, (req, res) => {
   const db = loadDB(); const task = db.tasks.find(t => t.id === req.params.id);
   if (!task) return res.status(404).json({ error: 'Topilmadi' });
   const list = db.lists.find(l => l.id === task.list_id && l.user_id === req.user.id);
-  if (!list) return res.status(403).json({ error: "Ruxsat yo'q" });
+  // Ulashilgan topshiriq — edit huquqi bor foydalanuvchi ham tahrirlay oladi
+  if (!list) {
+    const rootTask = (function findRoot(t) {
+      if (!t.parent_id) return t;
+      const p = db.tasks.find(x => x.id === t.parent_id);
+      return p ? findRoot(p) : t;
+    })(task);
+    const share = db.shared_tasks.find(s =>
+      s.task_id === rootTask.id &&
+      s.recipient_email === req.user.username &&
+      s.status === 'accepted' &&
+      s.permission === 'edit'
+    );
+    if (!share) return res.status(403).json({ error: "Ruxsat yo'q" });
+  }
   const b = req.body;
   if (b.text      !== undefined) task.text      = b.text;
   if (b.completed !== undefined) task.completed = !!b.completed;
@@ -248,7 +304,20 @@ app.delete('/api/tasks/:id', auth, (req, res) => {
   const db = loadDB(); const task = db.tasks.find(t => t.id === req.params.id);
   if (!task) return res.status(404).json({ error: 'Topilmadi' });
   const list = db.lists.find(l => l.id === task.list_id && l.user_id === req.user.id);
-  if (!list) return res.status(403).json({ error: "Ruxsat yo'q" });
+  if (!list) {
+    const rootTask = (function findRoot(t) {
+      if (!t.parent_id) return t;
+      const p = db.tasks.find(x => x.id === t.parent_id);
+      return p ? findRoot(p) : t;
+    })(task);
+    const share = db.shared_tasks.find(s =>
+      s.task_id === rootTask.id &&
+      s.recipient_email === req.user.username &&
+      s.status === 'accepted' &&
+      s.permission === 'edit'
+    );
+    if (!share) return res.status(403).json({ error: "Ruxsat yo'q" });
+  }
   deleteTaskDeep(req.params.id, db); saveDB(db); res.json({ ok: true });
 });
 
@@ -260,6 +329,21 @@ app.get('/api/tasks/:id/comments', auth, (req, res) => {
 app.post('/api/tasks/:id/comments', auth, (req, res) => {
   const db = loadDB();
   const task = db.tasks.find(t => t.id === req.params.id); if (!task) return res.status(404).json({ error: 'Topilmadi' });
+  // Ulashilgan topshiriqqa ham izoh yozish mumkin
+  const ownList = db.lists.find(l => l.id === task.list_id && l.user_id === req.user.id);
+  if (!ownList) {
+    const rootTask = (function findRoot(t) {
+      if (!t.parent_id) return t;
+      const p = db.tasks.find(x => x.id === t.parent_id);
+      return p ? findRoot(p) : t;
+    })(task);
+    const share = db.shared_tasks.find(s =>
+      s.task_id === rootTask.id &&
+      s.recipient_email === req.user.username &&
+      s.status === 'accepted'
+    );
+    if (!share) return res.status(403).json({ error: "Ruxsat yo'q" });
+  }
   const c = { id: nid(), task_id: req.params.id, author: req.user.name, author_id: req.user.id, text: req.body.text.trim(), created_at: Date.now() };
   if (!db.comments) db.comments = [];
   db.comments.push(c); saveDB(db); res.json(c);
@@ -386,6 +470,25 @@ app.delete('/api/archive/:id', auth, (req, res) => {
 // ── FILES ──
 app.post('/api/files', auth, upload.array('files'), (req, res) => {
   const { refId } = req.body; const db = loadDB();
+  // refId topshiriq ulashilganmi tekshirish — agar ha, ruxsat beramiz
+  const refTask = refId ? db.tasks.find(t => t.id === refId) : null;
+  if (refTask) {
+    const ownList = db.lists.find(l => l.id === refTask.list_id && l.user_id === req.user.id);
+    if (!ownList) {
+      const rootTask = (function findRoot(t) {
+        if (!t.parent_id) return t;
+        const p = db.tasks.find(x => x.id === t.parent_id);
+        return p ? findRoot(p) : t;
+      })(refTask);
+      const share = db.shared_tasks.find(s =>
+        s.task_id === rootTask.id &&
+        s.recipient_email === req.user.username &&
+        s.status === 'accepted' &&
+        s.permission === 'edit'
+      );
+      if (!share) return res.status(403).json({ error: "Ruxsat yo'q" });
+    }
+  }
   const saved = (req.files || []).map(f => {
     const file = { id: nid(), ref_id: refId, name: f.originalname, filename: f.filename, mimetype: f.mimetype, size: f.size, uploaded_by: req.user.name, uploaded_at: Date.now() };
     db.files.push(file); return fmtFile(file);
@@ -437,57 +540,18 @@ app.put('/api/shared/:id/accept', auth, (req, res) => {
   const db = loadDB();
   const s = db.shared_tasks.find(s => s.id === req.params.id && s.recipient_email === req.user.username);
   if (!s) return res.status(404).json({ error: 'Topilmadi' });
+  // Faqat statusni o'zgartirish — nusxa emas!
+  // Asl topshiriqqa to'g'ridan-to'g'ri kirish beriladi
   s.status = 'accepted';
-
-  // Topshiriqni qabul qiluvchining "Ulashilgan topshiriqlar" ro'yxatiga qo'shamiz
+  // "Ulashilgan topshiriqlar" ro'yxatini yaratish (agar yo'q bo'lsa)
   let sharedList = db.lists.find(l => l.user_id === req.user.id && l.is_shared_inbox);
   if (!sharedList) {
-    sharedList = { id: nid(), user_id: req.user.id, title: "📥 Ulashilgan topshiriqlar", is_shared_inbox: true, created_at: Date.now() };
+    sharedList = { id: nid(), user_id: req.user.id, title: 'Ulashilgan topshiriqlar', is_shared_inbox: true, created_at: Date.now() };
     db.lists.push(sharedList);
   }
-
-  // Topshiriq tarkibini ko'chiramiz (task_data dan)
-  let td;
-  try { td = JSON.parse(s.task_data); } catch { td = null; }
-
-  if (td) {
-    // Avval bu share dan ko'chirilgan task bormi tekshirish
-    const alreadyCopied = db.tasks.find(t => t.shared_from === s.id);
-    if (!alreadyCopied) {
-      function copyTask(node, parentId) {
-        const newId = nid();
-        db.tasks.push({
-          id: newId,
-          list_id: sharedList.id,
-          parent_id: parentId || null,
-          user_id: req.user.id,
-          text: node.text || '',
-          completed: node.completed || false,
-          priority: node.priority || 'medium',
-          status: node.status || 'todo',
-          deadline: node.deadline || null,
-          shared_from: parentId ? null : s.id,  // faqat root task ga belgi
-          shared_permission: s.permission,
-          original_task_id: node.id,
-          original_owner_id: s.owner_id,
-          created_at: Date.now()
-        });
-        // Fayllarni ham ko'chiramiz (reference sifatida)
-        if (node.files && node.files.length) {
-          node.files.forEach(f => {
-            const existingFile = db.files.find(fl => fl.id === f.id);
-            if (existingFile) {
-              db.files.push({ ...existingFile, id: nid(), ref_id: newId, copied_from: f.id });
-            }
-          });
-        }
-        (node.children || []).forEach(c => copyTask(c, newId));
-        return newId;
-      }
-      copyTask(td, null);
-    }
-  }
-
+  // Eski nusxalarni o'chirish (agar avval copy qilingan bo'lsa)
+  const oldCopied = db.tasks.filter(t => t.shared_from === s.id);
+  oldCopied.forEach(t => deleteTaskDeep(t.id, db));
   saveDB(db);
   res.json({ ok: true, listId: sharedList.id });
 });
