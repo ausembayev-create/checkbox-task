@@ -502,7 +502,7 @@ async function ckGoogle(e) {
       if (!d.configured) {
         e.preventDefault();
         const err = document.getElementById('aerr');
-        err.innerHTML = 'Google login sozlanmagan.<br><small>Railway da <b>GOOGLE_CLIENT_ID</b> va <b>GOOGLE_CLIENT_SECRET</b> va <b>GOOGLE_CALLBACK_URL</b> ni environment variables ga qo'shing.</small>';
+        err.innerHTML = "Google login sozlanmagan.<br><small>Railway da <b>GOOGLE_CLIENT_ID</b> va <b>GOOGLE_CLIENT_SECRET</b> va <b>GOOGLE_CALLBACK_URL</b> ni environment variables ga qo'shing.</small>";
         err.style.display = 'block';
         return false;
       }
