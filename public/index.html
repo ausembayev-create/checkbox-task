@@ -653,11 +653,13 @@ function renderSidebar() {
   const n = shared.filter(s => s.status === 'pending').length;
   const b = document.getElementById('shBadge'); b.style.display = n ? 'inline' : 'none'; b.textContent = n;
   const nav = document.getElementById('listsNav');
-  nav.innerHTML = lists.map(l => `
-    <div class="list-nav-item${curListId === l.id ? ' on' : ''}" onclick="goList('${l.id}')">
-      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${clean(l.title)}</span>
-      <button class="list-nav-del" onclick="event.stopPropagation();editListName('${l.id}')">✏️</button>
-    </div>`).join('');
+  nav.innerHTML = lists.map(l => {
+    const isInbox = l.is_shared_inbox;
+    return `<div class="list-nav-item${curListId === l.id ? ' on' : ''}${isInbox ? ' shared-inbox' : ''}" onclick="goList('${l.id}')" style="${isInbox ? 'border-left:3px solid #17a2b8;background:rgba(23,162,184,.07);' : ''}">
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${isInbox ? '📥 ' : ''}${clean(l.title)}</span>
+      ${!isInbox ? `<button class="list-nav-del" onclick="event.stopPropagation();editListName('${l.id}')">✏️</button>` : ''}
+    </div>`;
+  }).join('');
 }
 
 // ══════════════════════════════════════════
@@ -1248,7 +1250,19 @@ async function archAll(lid) {
 // ══════════════════════════════════════════
 async function acceptShare(sid) {
   load(true);
-  try { await api('PUT', `/api/shared/${sid}/accept`); const s = shared.find(x => x.id === sid); if (s) s.status = 'accepted'; renderSidebar(); renderShared(); notify('Qabul etildi ✓'); }
+  try {
+    const result = await api('PUT', `/api/shared/${sid}/accept`);
+    const s = shared.find(x => x.id === sid);
+    if (s) s.status = 'accepted';
+    // Ro'yxatlarni qayta yuklaymiz — yangi "Ulashilgan topshiriqlar" ro'yxati paydo bo'ladi
+    lists = await api('GET', '/api/lists');
+    calcStats();
+    renderSidebar();
+    renderShared();
+    notify("Qabul etildi ✅ 'Barcha ro'yxatlar' ga qo'shildi!");
+    // "Barcha ro'yxatlar" bo'limiga o'tish
+    setTimeout(() => goTab('all'), 1000);
+  }
   catch (e) { notify(e.message, 'err'); } finally { load(false); }
 }
 async function rejectShare(sid) {

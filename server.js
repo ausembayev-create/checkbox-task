@@ -189,7 +189,14 @@ app.post('/api/profile/bg', auth, upload.single('bg'), (req, res) => {
 // ── LISTS ──
 app.get('/api/lists', auth, (req, res) => {
   const db = loadDB();
-  res.json(db.lists.filter(l => l.user_id === req.user.id).sort((a, b) => a.created_at - b.created_at).map(l => ({ ...l, tasks: listTasks(l.id, db) })));
+  // O'z ro'yxatlari + ulashilgan topshiriqlar ro'yxati
+  const myLists = db.lists.filter(l => l.user_id === req.user.id);
+  res.json(myLists.sort((a, b) => {
+    // Ulashilgan topshiriqlar ro'yxati doim oxirida
+    if (a.is_shared_inbox) return 1;
+    if (b.is_shared_inbox) return -1;
+    return a.created_at - b.created_at;
+  }).map(l => ({ ...l, tasks: listTasks(l.id, db) })));
 });
 app.post('/api/lists', auth, (req, res) => {
   if (!req.body.title?.trim()) return res.status(400).json({ error: 'Nom kerak' });
@@ -427,8 +434,62 @@ app.get('/api/shared-to-me', auth, (req, res) => {
   }));
 });
 app.put('/api/shared/:id/accept', auth, (req, res) => {
-  const db = loadDB(); const s = db.shared_tasks.find(s => s.id === req.params.id && s.recipient_email === req.user.username);
-  if (s) { s.status = 'accepted'; saveDB(db); } res.json({ ok: true });
+  const db = loadDB();
+  const s = db.shared_tasks.find(s => s.id === req.params.id && s.recipient_email === req.user.username);
+  if (!s) return res.status(404).json({ error: 'Topilmadi' });
+  s.status = 'accepted';
+
+  // Topshiriqni qabul qiluvchining "Ulashilgan topshiriqlar" ro'yxatiga qo'shamiz
+  let sharedList = db.lists.find(l => l.user_id === req.user.id && l.is_shared_inbox);
+  if (!sharedList) {
+    sharedList = { id: nid(), user_id: req.user.id, title: "📥 Ulashilgan topshiriqlar", is_shared_inbox: true, created_at: Date.now() };
+    db.lists.push(sharedList);
+  }
+
+  // Topshiriq tarkibini ko'chiramiz (task_data dan)
+  let td;
+  try { td = JSON.parse(s.task_data); } catch { td = null; }
+
+  if (td) {
+    // Avval bu share dan ko'chirilgan task bormi tekshirish
+    const alreadyCopied = db.tasks.find(t => t.shared_from === s.id);
+    if (!alreadyCopied) {
+      function copyTask(node, parentId) {
+        const newId = nid();
+        db.tasks.push({
+          id: newId,
+          list_id: sharedList.id,
+          parent_id: parentId || null,
+          user_id: req.user.id,
+          text: node.text || '',
+          completed: node.completed || false,
+          priority: node.priority || 'medium',
+          status: node.status || 'todo',
+          deadline: node.deadline || null,
+          shared_from: parentId ? null : s.id,  // faqat root task ga belgi
+          shared_permission: s.permission,
+          original_task_id: node.id,
+          original_owner_id: s.owner_id,
+          created_at: Date.now()
+        });
+        // Fayllarni ham ko'chiramiz (reference sifatida)
+        if (node.files && node.files.length) {
+          node.files.forEach(f => {
+            const existingFile = db.files.find(fl => fl.id === f.id);
+            if (existingFile) {
+              db.files.push({ ...existingFile, id: nid(), ref_id: newId, copied_from: f.id });
+            }
+          });
+        }
+        (node.children || []).forEach(c => copyTask(c, newId));
+        return newId;
+      }
+      copyTask(td, null);
+    }
+  }
+
+  saveDB(db);
+  res.json({ ok: true, listId: sharedList.id });
 });
 app.delete('/api/shared/:id', auth, (req, res) => {
   const db = loadDB(); db.shared_tasks = db.shared_tasks.filter(s => !(s.id === req.params.id && s.recipient_email === req.user.username));
