@@ -283,11 +283,13 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
   /* Task card mobil */
   .t-compact{padding:8px 10px;gap:6px;}
   .t-name-txt{font-size:13px;}
-  .t-actions{gap:3px;}
-  .t-btn{padding:3px 7px;font-size:10px;}
-  select.psel,select.ssel{padding:2px 4px;font-size:10px;}
+  .t-actions{gap:3px;flex-wrap:wrap;}
+  .t-btn{padding:5px 9px;font-size:11px;}
+  select.psel,select.ssel{padding:3px 5px;font-size:11px;}
   .t-ring{width:26px;height:26px;}
   .children{margin-left:12px;padding-left:6px;}
+  /* Mobilda detail tugma katta, boshqalari kichik */
+  .t-btn-detail{padding:6px 12px !important;font-size:12px !important;font-weight:700 !important;}
 
   /* Yangi topshiriq qo'shish */
   .add-task-box{padding:10px;margin-bottom:12px;}
@@ -1109,6 +1111,7 @@ function mkNode(task, depth) {
             <option value="review"   ${sc === 'review' ? 'selected' : ''}>Review</option>
             <option value="done"     ${sc === 'done' ? 'selected' : ''}>Done</option>
           </select>
+          <button class="t-btn" style="background:#e3f0ff;color:#0066cc" onclick="openDetail('${task.id}')" title="Tafsilot, fayl, izoh">🔍 Ko'rish</button>
           <button class="t-btn c-blue" onclick="toggleCI('${task.id}')" title="Quyi topshiriq qo'shish">＋ Quyi</button>
           <button class="t-btn c-gray" onclick="openEditName('${task.id}')" title="Nomni o'zgartirish">✏️</button>
           <button class="t-btn" style="background:#e8d4f0;color:#6f42c1" onclick="openShare('${task.id}')" title="Ulashish">👥</button>

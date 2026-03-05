@@ -362,12 +362,19 @@ app.post('/api/tasks/:id/archive', auth, (req, res) => {
   const list = db.lists.find(l => l.id === task.list_id && l.user_id === req.user.id);
   if (!list) return res.status(403).json({ error: "Ruxsat yo'q" });
   const tree = buildTaskTree(task.id, db);
-  // parent_id ni ham saqlaymiz — qaytarilganda original joyiga tiklash uchun
+  // Files va comments ni task_data ichida saqlaymiz (restore uchun)
+  function enrichTree(node) {
+    node.files    = (db.files    || []).filter(f => f.ref_id  === node.id);
+    node.comments = (db.comments || []).filter(c => c.task_id === node.id);
+    (node.children || []).forEach(c => enrichTree(c));
+    return node;
+  }
+  enrichTree(tree);
   db.archive.push({
     id: nid(), user_id: String(req.user.id),
     task_data: JSON.stringify(tree),
     from_list: list.title, list_id: list.id,
-    parent_id: task.parent_id || null,  // original parent
+    parent_id: task.parent_id || null,
     archived_at: Date.now()
   });
   deleteTaskDeep(task.id, db); saveDB(db); res.json({ ok: true });
@@ -379,6 +386,12 @@ app.post('/api/lists/:lid/archive-completed', auth, (req, res) => {
   if (!done.length) return res.status(400).json({ error: "Bajarilgan vazifalar yo'q" });
   done.forEach(task => {
     const tree = buildTaskTree(task.id, db);
+    // Files va comments saqlash
+    (function enrichNode(n){
+      n.files    = (db.files    || []).filter(f => f.ref_id  === n.id);
+      n.comments = (db.comments || []).filter(c => c.task_id === n.id);
+      (n.children||[]).forEach(enrichNode);
+    })(tree);
     db.archive.push({ id: nid(), user_id: String(req.user.id), task_data: JSON.stringify(tree), from_list: list.title, list_id: list.id, archived_at: Date.now() });
     deleteTaskDeep(task.id, db);
   });
@@ -443,9 +456,49 @@ app.post('/api/archive/:id/unarchive', auth, (req, res) => {
     db.tasks.push({
       id: newId, list_id: list.id, parent_id: parentId || null,
       user_id: req.user.id, text: node.text || '',
-      completed: false, priority: node.priority || 'medium',
-      status: 'todo', deadline: node.deadline || null, created_at: Date.now()
+      completed: node.completed || false,
+      priority: node.priority || 'medium',
+      status: node.status || 'todo',
+      deadline: node.deadline || null,
+      created_at: node.created_at || Date.now()
     });
+    // Fayllarni qaytarish
+    if (node.files && node.files.length) {
+      node.files.forEach(f => {
+        // Fayl fizik mavjudmi?
+        const filepath = require('path').join(__dirname, 'uploads', f.url ? f.url.replace('/uploads/', '') : '');
+        if (require('fs').existsSync(filepath)) {
+          if (!db.files.find(fl => fl.id === f.id)) {
+            db.files.push({
+              id: f.id || nid(), ref_id: newId,
+              filename: f.url ? f.url.replace('/uploads/', '') : '',
+              name: f.name || '', mimetype: f.type || '',
+              size: f.size || 0
+            });
+          } else {
+            // ID band — yangi ID bilan qo'shamiz
+            db.files.push({
+              id: nid(), ref_id: newId,
+              filename: f.url ? f.url.replace('/uploads/', '') : '',
+              name: f.name || '', mimetype: f.type || '',
+              size: f.size || 0
+            });
+          }
+        }
+      });
+    }
+    // Izohlarni qaytarish
+    if (node.comments && node.comments.length) {
+      node.comments.forEach(c => {
+        db.comments.push({
+          id: nid(), task_id: newId,
+          user_id: c.user_id || req.user.id,
+          author: c.author || req.user.name || '',
+          text: c.text || '',
+          created_at: c.created_at || Date.now()
+        });
+      });
+    }
     (node.children || []).forEach(c => restoreTask(c, newId));
   }
   restoreTask(td, rootParentId);
