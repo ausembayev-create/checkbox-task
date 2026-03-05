@@ -217,12 +217,149 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
 /* ─── SHARED ─── */
 .sh-card{background:var(--card);border-radius:10px;padding:14px;margin-bottom:10px;border-left:5px solid var(--info);box-shadow:var(--shadow);}
 
-@media(max-width:900px){.sidebar{width:220px;}.detail-panel{width:320px;}}
+/* ─── MOBIL RESPONSIVE ─── */
+@media(max-width:900px){
+  .sidebar{width:220px;}
+  .detail-panel{width:320px;}
+}
+
 @media(max-width:700px){
-  .content{flex-direction:column;}
-  .sidebar{width:100%;max-height:200px;border-right:none;border-bottom:1px solid var(--bdr);}
-  .detail-panel{width:100%;min-width:unset;border-left:none;border-top:1px solid var(--bdr);max-height:60vh;}
-  .main{flex-direction:column;}
+  /* Umumiy layout */
+  .app{display:flex;flex-direction:column;height:100vh;overflow:hidden;}
+  .hdr{padding:8px 12px;gap:8px;flex-wrap:nowrap;}
+  .hdr-logo{font-size:18px;}
+  .hdr-search input{padding:7px 10px 7px 30px;font-size:13px;}
+  .ibtn{padding:6px 10px;font-size:12px;}
+
+  /* Content area */
+  .content{flex:1;flex-direction:column;overflow:hidden;position:relative;}
+
+  /* Sidebar — mobilda pastki tab bar ga aylanadi */
+  .sidebar{
+    width:100%;
+    min-height:unset;
+    border-right:none;
+    border-top:1px solid var(--bdr);
+    order:3;
+    overflow:hidden;
+    flex-shrink:0;
+  }
+  .sidebar-section{display:none;}
+  .stats-mini{display:none;}
+  .add-list-wrap{display:none;}
+  .lists-nav{display:none;}
+
+  /* Navigatsiya — mobilda gorizontal tab bar */
+  .mob-nav{
+    display:flex !important;
+    background:var(--card);
+    border-top:1px solid var(--bdr);
+    position:fixed;
+    bottom:0;left:0;right:0;
+    z-index:200;
+    box-shadow:0 -2px 12px rgba(0,0,0,.1);
+  }
+  .mob-nav-btn{
+    flex:1;display:flex;flex-direction:column;align-items:center;
+    padding:8px 4px 6px;
+    border:none;background:none;cursor:pointer;
+    font-size:10px;color:var(--sub);gap:3px;
+    position:relative;
+  }
+  .mob-nav-btn.on{color:var(--p);}
+  .mob-nav-btn span:first-child{font-size:22px;line-height:1;}
+  .mob-nav-badge{
+    position:absolute;top:5px;right:calc(50% - 18px);
+    background:var(--no);color:#fff;
+    font-size:9px;padding:1px 5px;border-radius:10px;font-weight:700;
+  }
+
+  /* Main panel */
+  .main{flex:1;flex-direction:column;overflow:hidden;padding-bottom:60px;}
+  .task-panel{flex:1;overflow-y:auto;padding:10px 12px;-webkit-overflow-scrolling:touch;}
+  .task-panel-header{margin-bottom:10px;gap:6px;}
+  .task-panel-title{font-size:17px;}
+
+  /* Task card mobil */
+  .t-compact{padding:8px 10px;gap:6px;}
+  .t-name-txt{font-size:13px;}
+  .t-actions{gap:3px;}
+  .t-btn{padding:3px 7px;font-size:10px;}
+  select.psel,select.ssel{padding:2px 4px;font-size:10px;}
+  .t-ring{width:26px;height:26px;}
+  .children{margin-left:12px;padding-left:6px;}
+
+  /* Yangi topshiriq qo'shish */
+  .add-task-box{padding:10px;margin-bottom:12px;}
+  .add-task-row{gap:6px;}
+  .at-inp{padding:8px 10px;font-size:13px;}
+  .at-date{padding:8px 8px;font-size:12px;}
+
+  /* Detail panel — mobilda to'liq ekran overlay */
+  .detail-panel{
+    position:fixed !important;
+    inset:0 !important;
+    width:100% !important;
+    min-width:unset !important;
+    border:none !important;
+    z-index:500;
+    padding-bottom:60px;
+    transform:translateX(100%);
+    transition:transform .25s ease;
+    display:flex !important;
+  }
+  .detail-panel:not(.hidden){transform:translateX(0);}
+  .detail-panel.hidden{transform:translateX(100%);}
+  .dp-hdr{padding:12px 14px 10px;}
+  .dp-title{font-size:15px;}
+
+  /* Sidebar drawer */
+  .sidebar-drawer{
+    position:fixed;
+    inset:0;
+    z-index:400;
+    display:none;
+  }
+  .sidebar-drawer.open{display:block;}
+  .sidebar-drawer-bg{
+    position:absolute;inset:0;
+    background:rgba(0,0,0,.5);
+  }
+  .sidebar-drawer-panel{
+    position:absolute;
+    left:0;top:0;bottom:0;
+    width:280px;
+    background:var(--card);
+    overflow-y:auto;
+    box-shadow:4px 0 20px rgba(0,0,0,.2);
+    padding-bottom:20px;
+    -webkit-overflow-scrolling:touch;
+  }
+  .sidebar-drawer-panel .sidebar-section{display:block;}
+  .sidebar-drawer-panel .stats-mini{display:grid;}
+  .sidebar-drawer-panel .add-list-wrap{display:block;}
+  .sidebar-drawer-panel .lists-nav{display:block;}
+  .sidebar-drawer-header{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:14px 16px;border-bottom:1px solid var(--bdr);
+    font-weight:700;font-size:16px;color:var(--p);
+  }
+  .sd-close{background:none;border:none;font-size:24px;cursor:pointer;color:var(--sub);}
+
+  /* Modal */
+  .modal{width:96vw;padding:18px 14px;border-radius:12px;}
+
+  /* Notify */
+  .notifs{top:10px;right:10px;left:10px;max-width:unset;}
+
+  /* Ro'yxat tugmasi (header da) */
+  .mob-lists-btn{display:flex !important;}
+}
+
+@media(min-width:701px){
+  .mob-nav{display:none !important;}
+  .mob-lists-btn{display:none !important;}
+  .sidebar-drawer{display:none !important;}
 }
 </style>
 </head>
@@ -307,6 +444,7 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
       <input type="text" id="srch" placeholder="Qidirish..." oninput="onSearch(this.value)">
     </div>
     <div class="hdr-right">
+      <button class="ibtn c-gray mob-lists-btn" style="display:none" onclick="openSidebarDrawer()" title="Ro'yxatlar">☰</button>
       <button class="ibtn c-gray" onclick="toggleTheme()"><span id="thIc">🌙</span></button>
       <div id="hdrAv" onclick="openProfile()" style="cursor:pointer"></div>
       <button class="ibtn c-no" onclick="logout()">Chiqish</button>
@@ -383,6 +521,105 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
   </div>
 </div>
 
+<!-- MOBIL PASTKI NAV -->
+<div class="mob-nav" id="mobNav" style="display:none">
+  <button class="mob-nav-btn on" id="mnAll" onclick="mobGoTab('all')">
+    <span>📋</span><span>Ro'yxatlar</span>
+  </button>
+  <button class="mob-nav-btn" id="mnShared" onclick="mobGoTab('shared')">
+    <span>📥</span><span>Ulashilgan</span>
+    <span class="mob-nav-badge" id="mobShBadge" style="display:none">0</span>
+  </button>
+  <button class="mob-nav-btn" id="mnArch" onclick="mobGoTab('arch')">
+    <span>📦</span><span>Arxiv</span>
+  </button>
+  <button class="mob-nav-btn" id="mnMenu" onclick="openSidebarDrawer()">
+    <span>☰</span><span>Menyu</span>
+  </button>
+</div>
+
+<!-- MOBIL SIDEBAR DRAWER -->
+<div class="sidebar-drawer" id="sidebarDrawer">
+  <div class="sidebar-drawer-bg" onclick="closeSidebarDrawer()"></div>
+  <div class="sidebar-drawer-panel">
+    <div class="sidebar-drawer-header">
+      <span>☑️ CheckBox</span>
+      <button class="sd-close" onclick="closeSidebarDrawer()">✕</button>
+    </div>
+    <div class="sidebar-section"><div class="sidebar-title">Statistika</div></div>
+    <div class="stats-mini">
+      <div class="sm"><div class="sm-n" id="dsTot">0</div><div class="sm-l">Jami</div></div>
+      <div class="sm"><div class="sm-n" id="dsDone">0</div><div class="sm-l">Bajarilgan</div></div>
+      <div class="sm"><div class="sm-n" id="dsPend">0</div><div class="sm-l">Kutilmoqda</div></div>
+      <div class="sm"><div class="sm-n" id="dsRate">0%</div><div class="sm-l">Foiz</div></div>
+    </div>
+    <div class="sidebar-section"><div class="sidebar-title">Navigatsiya</div>
+      <div class="nav-item" onclick="mobGoTab('all');closeSidebarDrawer()">📋 Barcha ro'yxatlar</div>
+      <div class="nav-item" onclick="mobGoTab('shared');closeSidebarDrawer()">📥 Ulashilgan</div>
+      <div class="nav-item" onclick="mobGoTab('arch');closeSidebarDrawer()">📦 Arxiv</div>
+    </div>
+    <div class="sidebar-section"><div class="sidebar-title">Ro'yxatlar</div></div>
+    <div class="add-list-wrap">
+      <input class="add-list-inp" id="nlInpD" placeholder="Yangi ro'yxat... (Enter)" onkeypress="if(event.key==='Enter'){createList();closeSidebarDrawer();}">
+      <button class="ibtn c-p" style="width:100%" onclick="createList();closeSidebarDrawer()">+ Yaratish</button>
+    </div>
+    <div class="lists-nav" id="listsNavD"></div>
+    <div style="padding:16px">
+      <button class="ibtn c-no" style="width:100%" onclick="logout()">🚪 Chiqish</button>
+    </div>
+  </div>
+</div>
+
+<!-- MOBIL PASTKI NAV -->
+<div class="mob-nav" id="mobNav" style="display:none">
+  <button class="mob-nav-btn" id="mnAll" onclick="mobGoTab('all')">
+    <span>📋</span><span>Ro'yxatlar</span>
+  </button>
+  <button class="mob-nav-btn" id="mnShared" onclick="mobGoTab('shared')">
+    <span>📥</span><span>Ulashilgan</span>
+    <span class="mob-nav-badge" id="mobShBadge" style="display:none">0</span>
+  </button>
+  <button class="mob-nav-btn" id="mnArch" onclick="mobGoTab('arch')">
+    <span>📦</span><span>Arxiv</span>
+  </button>
+  <button class="mob-nav-btn" id="mnMenu" onclick="openSidebarDrawer()">
+    <span>☰</span><span>Menyu</span>
+  </button>
+</div>
+
+<!-- MOBIL SIDEBAR DRAWER -->
+<div class="sidebar-drawer" id="sidebarDrawer">
+  <div class="sidebar-drawer-bg" onclick="closeSidebarDrawer()"></div>
+  <div class="sidebar-drawer-panel">
+    <div class="sidebar-drawer-header">
+      <span>☑️ CheckBox</span>
+      <button class="sd-close" onclick="closeSidebarDrawer()">✕</button>
+    </div>
+    <div class="sidebar-section"><div class="sidebar-title">Statistika</div></div>
+    <div class="stats-mini">
+      <div class="sm"><div class="sm-n" id="dsTot">0</div><div class="sm-l">Jami</div></div>
+      <div class="sm"><div class="sm-n" id="dsDone">0</div><div class="sm-l">Bajarilgan</div></div>
+      <div class="sm"><div class="sm-n" id="dsPend">0</div><div class="sm-l">Kutilmoqda</div></div>
+      <div class="sm"><div class="sm-n" id="dsRate">0%</div><div class="sm-l">Foiz</div></div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-title">Navigatsiya</div>
+      <div class="nav-item" onclick="mobGoTab('all');closeSidebarDrawer()">📋 Barcha ro'yxatlar</div>
+      <div class="nav-item" onclick="mobGoTab('shared');closeSidebarDrawer()">📥 Ulashilgan</div>
+      <div class="nav-item" onclick="mobGoTab('arch');closeSidebarDrawer()">📦 Arxiv</div>
+    </div>
+    <div class="sidebar-section"><div class="sidebar-title">Ro'yxatlar</div></div>
+    <div class="add-list-wrap">
+      <input class="add-list-inp" id="nlInpD" placeholder="Yangi ro'yxat... (Enter)" onkeypress="if(event.key==='Enter'){createList();closeSidebarDrawer();}">
+      <button class="ibtn c-p" style="width:100%" onclick="createList();closeSidebarDrawer()">+ Yaratish</button>
+    </div>
+    <div class="lists-nav" id="listsNavD"></div>
+    <div style="padding:16px">
+      <button class="ibtn c-no" style="width:100%;padding:12px;font-size:14px" onclick="logout()">🚪 Chiqish</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ══════════════════════════════════════════
 // GLOBALS
@@ -446,6 +683,97 @@ function toggleTheme() {
   localStorage.setItem('cbtheme', t);
 }
 if (localStorage.getItem('cbtheme') === 'dark') toggleTheme();
+
+// ══════════════════════════════════════════
+// MOBIL FUNKSIYALAR
+// ══════════════════════════════════════════
+const isMobile = () => window.innerWidth <= 700;
+
+function initMobileUI() {
+  if (!isMobile()) return;
+  // Pastki nav ko'rsatish
+  const mn = document.getElementById('mobNav');
+  if (mn) mn.style.display = 'flex';
+  // Aktiv tab belgisi
+  updateMobNav(curTab);
+}
+
+function updateMobNav(tab) {
+  ['All','Shared','Arch'].forEach(t => {
+    const btn = document.getElementById('mn' + t);
+    if (btn) btn.classList.toggle('on', t.toLowerCase() === tab ||
+      (t === 'All' && tab === 'all') ||
+      (t === 'Shared' && tab === 'shared') ||
+      (t === 'Arch' && tab === 'arch'));
+  });
+}
+
+function mobGoTab(tab) {
+  goTab(tab);
+  updateMobNav(tab);
+  // Detail panel yopiq bo'lsin
+  closeDetail();
+}
+
+function openSidebarDrawer() {
+  const drawer = document.getElementById('sidebarDrawer');
+  if (drawer) {
+    drawer.classList.add('open');
+    // Drawer ichidagi statistikani yangilash
+    syncDrawerStats();
+    syncDrawerLists();
+  }
+}
+
+function closeSidebarDrawer() {
+  const drawer = document.getElementById('sidebarDrawer');
+  if (drawer) drawer.classList.remove('open');
+}
+
+function syncDrawerStats() {
+  const map = {dsTot:'sTot', dsDone:'sDone', dsPend:'sPend', dsRate:'sRate'};
+  Object.entries(map).forEach(([d,s]) => {
+    const src = document.getElementById(s);
+    const dst = document.getElementById(d);
+    if (src && dst) dst.textContent = src.textContent;
+  });
+}
+
+function syncDrawerLists() {
+  const src = document.getElementById('listsNav');
+  const dst = document.getElementById('listsNavD');
+  if (src && dst) dst.innerHTML = src.innerHTML;
+  // Drawer ichidagi list itemlar bosilganda drawer yopilsin
+  if (dst) {
+    dst.querySelectorAll('.list-nav-item').forEach(el => {
+      el.addEventListener('click', () => setTimeout(closeSidebarDrawer, 100));
+    });
+  }
+}
+
+// openDetail mobilda to'liq ekran ochadi
+const _origOpenDetail = typeof openDetail === 'function' ? openDetail : null;
+
+// Detail yopilganda mobilda orqaga qaytish
+function closeDetail() {
+  const dp = document.getElementById('detailPanel');
+  if (dp) dp.classList.add('hidden');
+  detailTaskId = null;
+}
+
+// Badge yangilash
+function updateMobBadge() {
+  const n = shared.filter(s => s.status === 'pending').length;
+  const b = document.getElementById('mobShBadge');
+  if (b) { b.style.display = n ? 'inline' : 'none'; b.textContent = n; }
+}
+
+// Resize da UI yangilash
+window.addEventListener('resize', () => {
+  const mn = document.getElementById('mobNav');
+  if (mn) mn.style.display = isMobile() ? 'flex' : 'none';
+  if (!isMobile()) closeSidebarDrawer();
+});
 
 function applyBg(url) {
   if (url) { document.body.style.backgroundImage = `url(${url})`; document.body.classList.add('has-bg'); }
@@ -542,6 +870,7 @@ async function authSubmit() {
     document.getElementById('authOv').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
     showUser(); await loadAll();
+    if (typeof initMobileUI === 'function') initMobileUI();
     notify('Xush kelibsiz, ' + me.name + '! 👋');
   } catch (err) {
     e.textContent = err.message || 'Xatolik yuz berdi';
@@ -578,6 +907,7 @@ async function init() {
     document.getElementById('authOv').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
     showUser(); await loadAll();
+    if (typeof initMobileUI === 'function') initMobileUI();
   } catch {
     token = null; me = null;
     localStorage.removeItem('cbtoken'); localStorage.removeItem('cbuser');
@@ -644,22 +974,35 @@ function countTree(n) { let t = 1, d = n.completed ? 1 : 0; (n.children || []).f
 function calcStats() {
   let tot = 0, done = 0;
   lists.forEach(l => (l.tasks || []).forEach(t => { const r = countTree(t); tot += r.t; done += r.d; }));
-  document.getElementById('sTot').textContent = tot; document.getElementById('sDone').textContent = done;
-  document.getElementById('sPend').textContent = tot - done; document.getElementById('sRate').textContent = (tot ? Math.round(done / tot * 100) : 0) + '%';
+  const rate = (tot ? Math.round(done / tot * 100) : 0) + '%';
+  ['','ds'].forEach(pfx => {
+    const el = n => document.getElementById(pfx + n);
+    if (el('sTot')) { el('sTot').textContent = tot; el('sDone').textContent = done; el('sPend').textContent = tot - done; el('sRate').textContent = rate; }
+  });
+  // Mobil badge yangilash
+  if (typeof updateMobBadge === 'function') updateMobBadge();
 }
 function onSearch(v) { q = v.toLowerCase(); render(); }
 
 function renderSidebar() {
   const n = shared.filter(s => s.status === 'pending').length;
-  const b = document.getElementById('shBadge'); b.style.display = n ? 'inline' : 'none'; b.textContent = n;
-  const nav = document.getElementById('listsNav');
-  nav.innerHTML = lists.map(l => {
+  const b = document.getElementById('shBadge'); if(b){b.style.display = n ? 'inline' : 'none'; b.textContent = n;}
+
+  const makeListHTML = () => lists.map(l => {
     const isInbox = l.is_shared_inbox;
-    return `<div class="list-nav-item${curListId === l.id ? ' on' : ''}${isInbox ? ' shared-inbox' : ''}" onclick="goList('${l.id}')" style="${isInbox ? 'border-left:3px solid #17a2b8;background:rgba(23,162,184,.07);' : ''}">
+    return `<div class="list-nav-item${curListId === l.id ? ' on' : ''}${isInbox ? ' shared-inbox' : ''}" onclick="goList('${l.id}');closeSidebarDrawer();" style="${isInbox ? 'border-left:3px solid #17a2b8;background:rgba(23,162,184,.07);' : ''}">
       <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${isInbox ? '📥 ' : ''}${clean(l.title)}</span>
       ${!isInbox ? `<button class="list-nav-del" onclick="event.stopPropagation();editListName('${l.id}')">✏️</button>` : ''}
     </div>`;
   }).join('');
+
+  const nav = document.getElementById('listsNav');
+  if (nav) nav.innerHTML = makeListHTML();
+  // Drawer ichidagi ro'yxatni ham yangilash
+  const navD = document.getElementById('listsNavD');
+  if (navD) navD.innerHTML = makeListHTML();
+  // Mobil UI
+  if (typeof initMobileUI === 'function') initMobileUI();
 }
 
 // ══════════════════════════════════════════
