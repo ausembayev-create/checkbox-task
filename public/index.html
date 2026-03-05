@@ -523,10 +523,12 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
               <div class="up-bar-wrap"><div class="up-bar" id="dpUpBar"></div></div>
               <div class="up-txt" id="dpUpTxt">Yuklanmoqda...</div>
             </div>
+            <div id="dpFileUploadBtn">
             <label class="ibtn c-p" style="display:block;text-align:center;padding:8px;cursor:pointer;border-radius:8px;font-size:13px;font-weight:600">
               📎 Fayl / Rasm / Video qo'shish
               <input type="file" id="dpFileInp" multiple accept="image/*,video/*,.pdf,.doc,.docx,.txt,.xlsx,.zip" style="display:none" onchange="uploadDetailFile(this)">
             </label>
+            </div>
           </div>
           <!-- Comments section -->
           <div class="dp-section">
@@ -1068,6 +1070,9 @@ function render() {
 // ══════════════════════════════════════════
 function treeHas(tasks, q) { return tasks.some(t => t.text.toLowerCase().includes(q) || treeHas(t.children || [], q)); }
 
+// Joriy ko'rsatilayotgan listning permission holati
+let curListPermission = 'owner'; // 'owner' | 'edit' | 'view'
+
 function renderLists() {
   let show = curListId ? lists.filter(l => l.id === curListId) : lists;
   if (q) show = show.filter(l => l.title.toLowerCase().includes(q) || treeHas(l.tasks || [], q));
@@ -1076,8 +1081,27 @@ function renderLists() {
   C.innerHTML = show.map(l => buildListHTML(l)).join('');
   show.forEach(l => {
     const ul = document.getElementById('tl' + l.id);
-    (l.tasks || []).forEach(t => ul.appendChild(mkNode(t, 0)));
+    // Ulashilgan ro'yxat uchun permission aniqlash
+    const listPerm = getListPermission(l);
+    (l.tasks || []).forEach(t => ul.appendChild(mkNode(t, 0, listPerm)));
   });
+}
+
+// List uchun joriy foydalanuvchi huquqini aniqlash
+function getListPermission(list) {
+  if (!list.is_shared_inbox) return 'owner';
+  // Ulashilgan ro'yxat — shared_tasks dan topishga harakat
+  // Tasklar _permission field bilan kelishi mumkin
+  const firstTask = (list.tasks || [])[0];
+  if (firstTask && firstTask._permission) return firstTask._permission;
+  // shared array dan qidiramiz
+  for (const s of shared) {
+    if (s.status === 'accepted') {
+      const taskId = s.taskId || (s.taskData && s.taskData.id);
+      if (list.tasks && list.tasks.some(t => t.id === taskId)) return s.permission;
+    }
+  }
+  return 'edit'; // default
 }
 
 function buildListHTML(list) {
@@ -1106,7 +1130,10 @@ function buildListHTML(list) {
 // ══════════════════════════════════════════
 // TASK NODE — COMPACT VIEW
 // ══════════════════════════════════════════
-function mkNode(task, depth) {
+function mkNode(task, depth, perm) {
+  perm = perm || 'owner'; // 'owner' | 'edit' | 'view'
+  const canEdit = perm === 'owner' || perm === 'edit';
+  const isOwner = perm === 'owner';
   const li = document.createElement('li');
   li.className = 'task-item';
   if (q && !task.text.toLowerCase().includes(q) && !treeHas(task.children || [], q)) return li;
@@ -1124,9 +1151,9 @@ function mkNode(task, depth) {
     <div class="t-card ${task.completed ? 'done' : ''} p-${pc} d${Math.min(depth, 3)}">
       <div class="t-compact">
         <span class="t-exp" onclick="toggleColl('${task.id}')">${hasKids ? (isColl ? '▶' : '▼') : '·'}</span>
-        <div class="t-chk" onclick="toggleTask('${task.id}')"></div>
+        <div class="t-chk" onclick="${canEdit ? `toggleTask('${task.id}')` : ''}"></div>
         ${renderRing(pct)}
-        <div class="t-name" onclick="openDetail('${task.id}')" style="cursor:pointer;flex:1;min-width:0">
+        <div class="t-name" onclick="openDetail('${task.id}','${perm}')" style="cursor:pointer;flex:1;min-width:0">
           <div class="t-name-txt" title="${clean(task.text)}">${clean(task.text)}</div>
           <div class="t-meta">
             ${task.deadline ? `<span class="t-dl${late ? ' late' : ''}">📅 ${fmtDate(task.deadline)}${late ? ' ⚠️' : ''}</span>` : ''}
@@ -1135,6 +1162,7 @@ function mkNode(task, depth) {
           </div>
         </div>
         <div class="t-actions">
+          ${canEdit ? `
           <select class="psel ${pc}" onchange="updPri('${task.id}',this.value)">
             <option value="low"      ${pc === 'low' ? 'selected' : ''}>Past</option>
             <option value="medium"   ${pc === 'medium' ? 'selected' : ''}>O'rta</option>
@@ -1147,13 +1175,13 @@ function mkNode(task, depth) {
             <option value="progress" ${sc === 'progress' ? 'selected' : ''}>In Progress</option>
             <option value="review"   ${sc === 'review' ? 'selected' : ''}>Review</option>
             <option value="done"     ${sc === 'done' ? 'selected' : ''}>Done</option>
-          </select>
-          <button class="t-btn" style="background:#e3f0ff;color:#0066cc" onclick="openDetail('${task.id}')" title="Tafsilot, fayl, izoh">🔍 Ko'rish</button>
-          <button class="t-btn c-blue" onclick="toggleCI('${task.id}')" title="Quyi topshiriq qo'shish">＋ Quyi</button>
-          <button class="t-btn c-gray" onclick="openEditName('${task.id}')" title="Nomni o'zgartirish">✏️</button>
-          <button class="t-btn" style="background:#e8d4f0;color:#6f42c1" onclick="openShare('${task.id}')" title="Ulashish">👥</button>
-          <button class="t-btn c-ok"   onclick="archTask('${task.id}')" title="Arxivga yuborish">📦</button>
-          <button class="t-btn c-red"  onclick="delTask('${task.id}')" title="O'chirish">🗑️</button>
+          </select>` : `<span class="t-btn" style="background:#f0f0f0;color:#888;cursor:default">👁 Ko'rish</span>`}
+          <button class="t-btn" style="background:#e3f0ff;color:#0066cc" onclick="openDetail('${task.id}','${perm}')" title="Tafsilot, fayl, izoh">🔍 Ko'rish</button>
+          ${canEdit ? `<button class="t-btn c-blue" onclick="toggleCI('${task.id}')" title="Quyi topshiriq qo'shish">＋ Quyi</button>` : ''}
+          ${canEdit ? `<button class="t-btn c-gray" onclick="openEditName('${task.id}')" title="Nomni o'zgartirish">✏️</button>` : ''}
+          ${isOwner ? `<button class="t-btn" style="background:#e8d4f0;color:#6f42c1" onclick="openShare('${task.id}')" title="Ulashish">👥</button>` : ''}
+          ${isOwner ? `<button class="t-btn c-ok" onclick="archTask('${task.id}')" title="Arxivga yuborish">📦</button>` : ''}
+          ${canEdit ? `<button class="t-btn c-red" onclick="delTask('${task.id}')" title="O'chirish">🗑️</button>` : ''}
         </div>
       </div>
       <div class="sub-inp-wrap${ciOpen ? ' show' : ''}" id="ci${task.id}">
@@ -1183,8 +1211,12 @@ function findInTree(tasks, id) { for (const t of tasks) { if (t.id === id) retur
 function listOf(id) { for (const l of lists) { if (findInTree(l.tasks || [], id)) return l; } return null; }
 function rmFromTree(tasks, id) { const i = tasks.findIndex(t => t.id === id); if (i !== -1) { tasks.splice(i, 1); return true; } return tasks.some(t => rmFromTree(t.children || [], id)); }
 
-async function openDetail(taskId) {
+async function openDetail(taskId, perm) {
   detailTaskId = taskId;
+  // View huquqi — fayl yuklash va o'chirish tugmalarini yashirish
+  const isViewOnly = perm === 'view';
+  const uploadBtn = document.getElementById('dpFileUploadBtn');
+  if (uploadBtn) uploadBtn.style.display = isViewOnly ? 'none' : 'block';
   const dp = document.getElementById('detailPanel');
   dp.classList.remove('hidden');
   const l = listOf(taskId);
@@ -1192,7 +1224,7 @@ async function openDetail(taskId) {
   const task = findInTree(l.tasks || [], taskId);
   if (!task) return;
   document.getElementById('dpTitle').textContent = task.text;
-  renderDetailFiles(task.files || []);
+  renderDetailFiles(task.files || [], perm === 'view');
   // Load fresh comments
   try {
     const comments = await api('GET', `/api/tasks/${taskId}/comments`);

@@ -253,45 +253,20 @@ app.post('/api/lists/:lid/tasks', auth, (req, res) => {
   db.tasks.push(task); saveDB(db); res.json(buildTaskTree(task.id, db));
 });
 app.post('/api/tasks/:pid/children', auth, (req, res) => {
-  const db = loadDB(); const parent = db.tasks.find(t => t.id === req.params.pid);
-  if (!parent) return res.status(404).json({ error: 'Topilmadi' });
-  const list = db.lists.find(l => l.id === parent.list_id && l.user_id === req.user.id);
-  if (!list) {
-    const rootTask = (function findRoot(t) {
-      if (!t.parent_id) return t;
-      const p = db.tasks.find(x => x.id === t.parent_id);
-      return p ? findRoot(p) : t;
-    })(parent);
-    const share = db.shared_tasks.find(s =>
-      s.task_id === rootTask.id &&
-      s.recipient_email === req.user.username &&
-      s.status === 'accepted' &&
-      s.permission === 'edit'
-    );
-    if (!share) return res.status(403).json({ error: "Ruxsat yo'q" });
-  }
+  const db = loadDB();
+  const perm = getTaskPermission(req.params.pid, req.user.id, req.user.username, db);
+  if (!perm) return res.status(404).json({ error: 'Topilmadi' });
+  if (perm === 'view') return res.status(403).json({ error: "Faqat ko'rish huquqi bor" });
+  const parent = db.tasks.find(t => t.id === req.params.pid);
   const task = { id: nid(), list_id: parent.list_id, parent_id: req.params.pid, user_id: req.user.id, text: req.body.text.trim(), completed: false, priority: parent.priority || 'medium', status: 'todo', deadline: req.body.deadline || null, created_at: Date.now() };
   db.tasks.push(task); saveDB(db); res.json(buildTaskTree(task.id, db));
 });
 app.put('/api/tasks/:id', auth, (req, res) => {
-  const db = loadDB(); const task = db.tasks.find(t => t.id === req.params.id);
-  if (!task) return res.status(404).json({ error: 'Topilmadi' });
-  const list = db.lists.find(l => l.id === task.list_id && l.user_id === req.user.id);
-  // Ulashilgan topshiriq — edit huquqi bor foydalanuvchi ham tahrirlay oladi
-  if (!list) {
-    const rootTask = (function findRoot(t) {
-      if (!t.parent_id) return t;
-      const p = db.tasks.find(x => x.id === t.parent_id);
-      return p ? findRoot(p) : t;
-    })(task);
-    const share = db.shared_tasks.find(s =>
-      s.task_id === rootTask.id &&
-      s.recipient_email === req.user.username &&
-      s.status === 'accepted' &&
-      s.permission === 'edit'
-    );
-    if (!share) return res.status(403).json({ error: "Ruxsat yo'q" });
-  }
+  const db = loadDB();
+  const perm = getTaskPermission(req.params.id, req.user.id, req.user.username, db);
+  if (!perm) return res.status(404).json({ error: 'Topilmadi' });
+  if (perm === 'view') return res.status(403).json({ error: "Faqat ko'rish huquqi bor" });
+  const task = db.tasks.find(t => t.id === req.params.id);
   const b = req.body;
   if (b.text      !== undefined) task.text      = b.text;
   if (b.completed !== undefined) task.completed = !!b.completed;
@@ -301,23 +276,10 @@ app.put('/api/tasks/:id', auth, (req, res) => {
   saveDB(db); res.json({ ok: true });
 });
 app.delete('/api/tasks/:id', auth, (req, res) => {
-  const db = loadDB(); const task = db.tasks.find(t => t.id === req.params.id);
-  if (!task) return res.status(404).json({ error: 'Topilmadi' });
-  const list = db.lists.find(l => l.id === task.list_id && l.user_id === req.user.id);
-  if (!list) {
-    const rootTask = (function findRoot(t) {
-      if (!t.parent_id) return t;
-      const p = db.tasks.find(x => x.id === t.parent_id);
-      return p ? findRoot(p) : t;
-    })(task);
-    const share = db.shared_tasks.find(s =>
-      s.task_id === rootTask.id &&
-      s.recipient_email === req.user.username &&
-      s.status === 'accepted' &&
-      s.permission === 'edit'
-    );
-    if (!share) return res.status(403).json({ error: "Ruxsat yo'q" });
-  }
+  const db = loadDB();
+  const perm = getTaskPermission(req.params.id, req.user.id, req.user.username, db);
+  if (!perm) return res.status(404).json({ error: 'Topilmadi' });
+  if (perm === 'view') return res.status(403).json({ error: "Faqat ko'rish huquqi bor" });
   deleteTaskDeep(req.params.id, db); saveDB(db); res.json({ ok: true });
 });
 
@@ -328,39 +290,34 @@ app.get('/api/tasks/:id/comments', auth, (req, res) => {
 });
 app.post('/api/tasks/:id/comments', auth, (req, res) => {
   const db = loadDB();
-  const task = db.tasks.find(t => t.id === req.params.id); if (!task) return res.status(404).json({ error: 'Topilmadi' });
-  // Ulashilgan topshiriqqa ham izoh yozish mumkin
-  const ownList = db.lists.find(l => l.id === task.list_id && l.user_id === req.user.id);
-  if (!ownList) {
-    const rootTask = (function findRoot(t) {
-      if (!t.parent_id) return t;
-      const p = db.tasks.find(x => x.id === t.parent_id);
-      return p ? findRoot(p) : t;
-    })(task);
-    const share = db.shared_tasks.find(s =>
-      s.task_id === rootTask.id &&
-      s.recipient_email === req.user.username &&
-      s.status === 'accepted'
-    );
-    if (!share) return res.status(403).json({ error: "Ruxsat yo'q" });
-  }
+  const perm = getTaskPermission(req.params.id, req.user.id, req.user.username, db);
+  if (!perm) return res.status(404).json({ error: 'Topilmadi' });
+  // view va edit huquqida ham izoh yozish mumkin (faqat o'qish emas)
+  const task = db.tasks.find(t => t.id === req.params.id);
   const c = { id: nid(), task_id: req.params.id, author: req.user.name, author_id: req.user.id, text: req.body.text.trim(), created_at: Date.now() };
   if (!db.comments) db.comments = [];
   db.comments.push(c); saveDB(db); res.json(c);
 });
 app.delete('/api/comments/:id', auth, (req, res) => {
   const db = loadDB();
-  const idx = (db.comments || []).findIndex(c => c.id === req.params.id && c.author_id === req.user.id);
-  if (idx === -1) return res.status(404).json({ error: 'Topilmadi' });
+  const comment = (db.comments || []).find(c => c.id === req.params.id);
+  if (!comment) return res.status(404).json({ error: 'Topilmadi' });
+  // Faqat o'z izohini o'chira oladi
+  if (String(comment.author_id) !== String(req.user.id)) {
+    return res.status(403).json({ error: "Faqat o'z izohingizni o'chira olasiz" });
+  }
+  const idx = db.comments.indexOf(comment);
   db.comments.splice(idx, 1); saveDB(db); res.json({ ok: true });
 });
 
 // ── ARXIV ──
 app.post('/api/tasks/:id/archive', auth, (req, res) => {
-  const db = loadDB(); const task = db.tasks.find(t => t.id === req.params.id);
-  if (!task) return res.status(404).json({ error: 'Topilmadi' });
-  const list = db.lists.find(l => l.id === task.list_id && l.user_id === req.user.id);
-  if (!list) return res.status(403).json({ error: "Ruxsat yo'q" });
+  const db = loadDB();
+  const perm = getTaskPermission(req.params.id, req.user.id, req.user.username, db);
+  if (!perm) return res.status(404).json({ error: 'Topilmadi' });
+  if (perm !== 'owner') return res.status(403).json({ error: "Arxivlash faqat topshiriq egasiga ruxsat" });
+  const task = db.tasks.find(t => t.id === req.params.id);
+  const list = db.lists.find(l => l.id === task.list_id);
   const tree = buildTaskTree(task.id, db);
   // Files va comments ni task_data ichida saqlaymiz (restore uchun)
   function enrichTree(node) {
@@ -523,24 +480,10 @@ app.delete('/api/archive/:id', auth, (req, res) => {
 // ── FILES ──
 app.post('/api/files', auth, upload.array('files'), (req, res) => {
   const { refId } = req.body; const db = loadDB();
-  // refId topshiriq ulashilganmi tekshirish — agar ha, ruxsat beramiz
-  const refTask = refId ? db.tasks.find(t => t.id === refId) : null;
-  if (refTask) {
-    const ownList = db.lists.find(l => l.id === refTask.list_id && l.user_id === req.user.id);
-    if (!ownList) {
-      const rootTask = (function findRoot(t) {
-        if (!t.parent_id) return t;
-        const p = db.tasks.find(x => x.id === t.parent_id);
-        return p ? findRoot(p) : t;
-      })(refTask);
-      const share = db.shared_tasks.find(s =>
-        s.task_id === rootTask.id &&
-        s.recipient_email === req.user.username &&
-        s.status === 'accepted' &&
-        s.permission === 'edit'
-      );
-      if (!share) return res.status(403).json({ error: "Ruxsat yo'q" });
-    }
+  if (refId) {
+    const perm = getTaskPermission(refId, req.user.id, req.user.username, db);
+    if (!perm) return res.status(404).json({ error: 'Topilmadi' });
+    if (perm === 'view') return res.status(403).json({ error: "Faqat ko'rish huquqi bor, fayl yuklay olmaysiz" });
   }
   const saved = (req.files || []).map(f => {
     const file = { id: nid(), ref_id: refId, name: f.originalname, filename: f.filename, mimetype: f.mimetype, size: f.size, uploaded_by: req.user.name, uploaded_at: Date.now() };
@@ -549,11 +492,19 @@ app.post('/api/files', auth, upload.array('files'), (req, res) => {
   saveDB(db); res.json(saved);
 });
 app.delete('/api/files/:id', auth, (req, res) => {
-  const db = loadDB(); const idx = (db.files || []).findIndex(f => f.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'Topilmadi' });
-  const fp = path.join(UPLOADS_DIR, db.files[idx].filename);
+  const db = loadDB();
+  const fileIdx = (db.files || []).findIndex(f => f.id === req.params.id);
+  if (fileIdx === -1) return res.status(404).json({ error: 'Topilmadi' });
+  const file = db.files[fileIdx];
+  // Topshiriq huquqini tekshirish
+  if (file.ref_id) {
+    const perm = getTaskPermission(file.ref_id, req.user.id, req.user.username, db);
+    if (!perm) return res.status(403).json({ error: "Ruxsat yo'q" });
+    if (perm === 'view') return res.status(403).json({ error: "Faqat ko'rish huquqi bor, fayl o'chira olmaysiz" });
+  }
+  const fp = path.join(UPLOADS_DIR, file.filename);
   if (fs.existsSync(fp)) try { fs.unlinkSync(fp); } catch {}
-  db.files.splice(idx, 1); saveDB(db); res.json({ ok: true });
+  db.files.splice(fileIdx, 1); saveDB(db); res.json({ ok: true });
 });
 
 // ── SHARING ──
