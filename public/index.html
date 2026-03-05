@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>CheckBox Task</title>
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png">
+<link rel="apple-touch-icon" href="/favicon-64.png">
+<link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png">
+<link rel="apple-touch-icon" href="/favicon-64.png">
 <style>
 :root{--p:#667eea;--pd:#5568d3;--ok:#28a745;--no:#dc3545;--warn:#ffc107;--info:#17a2b8;
   --bg:#f0f2f5;--card:#fff;--txt:#222;--sub:#6c757d;--bdr:#dee2e6;--shadow:0 2px 12px rgba(0,0,0,.1);}
@@ -15,7 +20,7 @@ body.has-bg{background-size:cover;background-position:center;background-attachme
 /* ─── LAYOUT ─── */
 .app{display:flex;flex-direction:column;min-height:100vh;}
 .hdr{background:var(--card);padding:12px 20px;box-shadow:var(--shadow);position:sticky;top:0;z-index:100;display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
-.hdr-logo{font-size:22px;font-weight:800;color:var(--p);flex-shrink:0;}
+.hdr-logo{font-size:22px;font-weight:800;color:var(--p);flex-shrink:0;} .hdr-logo img{height:36px;width:auto;}
 .hdr-search{flex:1;min-width:160px;position:relative;}
 .hdr-search input{width:100%;padding:8px 12px 8px 34px;border:2px solid var(--bdr);border-radius:20px;background:var(--bg);color:var(--txt);font-size:13px;outline:none;}
 .hdr-search input:focus{border-color:var(--p);}
@@ -372,8 +377,10 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
 <!-- AUTH -->
 <div class="auth-ov" id="authOv">
   <div class="auth-box">
-    <div class="auth-logo">☑️</div>
-    <h2 id="authTitle">CheckBox Task</h2>
+    <div class="auth-logo" style="text-align:center;margin-bottom:10px">
+      <img src="/logo.png" alt="CheckBox Task" style="height:60px;width:auto;object-fit:contain">
+    </div>
+    <h2 id="authTitle" style="display:none">CheckBox Task</h2>
     <div class="aerr" id="aerr"></div>
     <a href="/auth/google" class="gbtn" onclick="return ckGoogle(event)">
       <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="G"> Google bilan kirish
@@ -440,7 +447,7 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
 <div class="app" id="app" style="display:none">
   <!-- HEADER -->
   <header class="hdr">
-    <span class="hdr-logo">☑️ CheckBox</span>
+    <a href="/" style="display:flex;align-items:center;gap:8px;text-decoration:none;flex-shrink:0"><img src="/logo.png" alt="CheckBox Task" style="height:36px;width:auto;object-fit:contain"></a>
     <div class="hdr-search">
       <span class="hdr-search-ic">🔍</span>
       <input type="text" id="srch" placeholder="Qidirish..." oninput="onSearch(this.value)">
@@ -545,7 +552,7 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
   <div class="sidebar-drawer-bg" onclick="closeSidebarDrawer()"></div>
   <div class="sidebar-drawer-panel">
     <div class="sidebar-drawer-header">
-      <span>☑️ CheckBox</span>
+      <img src="/logo.png" alt="CheckBox Task" style="height:28px;width:auto;object-fit:contain">
       <button class="sd-close" onclick="closeSidebarDrawer()">✕</button>
     </div>
     <div class="sidebar-section"><div class="sidebar-title">Statistika</div></div>
@@ -594,7 +601,7 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
   <div class="sidebar-drawer-bg" onclick="closeSidebarDrawer()"></div>
   <div class="sidebar-drawer-panel">
     <div class="sidebar-drawer-header">
-      <span>☑️ CheckBox</span>
+      <img src="/logo.png" alt="CheckBox Task" style="height:28px;width:auto;object-fit:contain">
       <button class="sd-close" onclick="closeSidebarDrawer()">✕</button>
     </div>
     <div class="sidebar-section"><div class="sidebar-title">Statistika</div></div>
