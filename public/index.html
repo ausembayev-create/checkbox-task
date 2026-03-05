@@ -15,7 +15,20 @@
 [data-theme=dark]{--bg:#141414;--card:#222;--txt:#e0e0e0;--sub:#888;--bdr:#383838;--shadow:0 2px 12px rgba(0,0,0,.4);}
 *{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);min-height:100vh;color:var(--txt);transition:background .25s,color .25s;}
-body.has-bg{background-size:cover;background-position:center;background-attachment:fixed;}
+body.has-bg{background-size:cover !important;background-position:center !important;background-attachment:fixed !important;background-repeat:no-repeat !important;}
+body.has-bg .hdr{background:rgba(255,255,255,0.85) !important;backdrop-filter:blur(8px);}
+body.has-bg .sidebar{background:rgba(255,255,255,0.85) !important;backdrop-filter:blur(6px);}
+[data-theme=dark] body.has-bg .hdr{background:rgba(20,20,20,0.85) !important;}
+[data-theme=dark] body.has-bg .sidebar{background:rgba(30,30,30,0.85) !important;}
+body.has-bg .content, body.has-bg .main, body.has-bg .app{background:transparent !important;}
+body.has-bg .app{background:transparent;}
+body.has-bg .sidebar{background:rgba(var(--card-rgb,255,255,255),0.88);backdrop-filter:blur(4px);}
+body.has-bg .hdr{background:rgba(var(--card-rgb,255,255,255),0.88);backdrop-filter:blur(6px);}
+body.has-bg .task-panel{background:transparent;}
+body.has-bg .content{background:transparent;}
+body.has-bg .main{background:transparent;}
+[data-theme=dark] body.has-bg .sidebar{background:rgba(30,30,30,0.88);}
+[data-theme=dark] body.has-bg .hdr{background:rgba(20,20,20,0.88);}
 
 /* ─── LAYOUT ─── */
 .app{display:flex;flex-direction:column;min-height:100vh;}
@@ -378,7 +391,7 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
 <div class="auth-ov" id="authOv">
   <div class="auth-box">
     <div class="auth-logo" style="text-align:center;margin-bottom:10px">
-      <img src="/logo.png" alt="CheckBox Task" style="height:70px;width:auto;object-fit:contain;mix-blend-mode:multiply">
+      <img src="/logo.png" alt="CheckBox Task" style="height:56px;width:auto;object-fit:contain">
     </div>
     <h2 id="authTitle" style="display:none">CheckBox Task</h2>
     <div class="aerr" id="aerr"></div>
@@ -447,7 +460,7 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
 <div class="app" id="app" style="display:none">
   <!-- HEADER -->
   <header class="hdr">
-    <a href="/" style="display:flex;align-items:center;gap:8px;text-decoration:none;flex-shrink:0"><img src="/logo.png" alt="CheckBox Task" style="height:38px;width:auto;object-fit:contain;mix-blend-mode:multiply" id="headerLogo"></a>
+    <a href="/" style="display:flex;align-items:center;text-decoration:none;flex-shrink:0"><img src="/logo.png" alt="CheckBox Task" style="height:44px;width:auto;object-fit:contain" id="headerLogo"></a>
     <div class="hdr-search">
       <span class="hdr-search-ic">🔍</span>
       <input type="text" id="srch" placeholder="Qidirish..." oninput="onSearch(this.value)">
@@ -552,7 +565,7 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
   <div class="sidebar-drawer-bg" onclick="closeSidebarDrawer()"></div>
   <div class="sidebar-drawer-panel">
     <div class="sidebar-drawer-header">
-      <img src="/logo.png" alt="CheckBox Task" style="height:30px;width:auto;object-fit:contain;mix-blend-mode:multiply">
+      <img src="/logo.png" alt="CheckBox Task" style="height:32px;width:auto;object-fit:contain">
       <button class="sd-close" onclick="closeSidebarDrawer()">✕</button>
     </div>
     <div class="sidebar-section"><div class="sidebar-title">Statistika</div></div>
@@ -601,7 +614,7 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
   <div class="sidebar-drawer-bg" onclick="closeSidebarDrawer()"></div>
   <div class="sidebar-drawer-panel">
     <div class="sidebar-drawer-header">
-      <img src="/logo.png" alt="CheckBox Task" style="height:30px;width:auto;object-fit:contain;mix-blend-mode:multiply">
+      <img src="/logo.png" alt="CheckBox Task" style="height:32px;width:auto;object-fit:contain">
       <button class="sd-close" onclick="closeSidebarDrawer()">✕</button>
     </div>
     <div class="sidebar-section"><div class="sidebar-title">Statistika</div></div>
@@ -792,8 +805,18 @@ window.addEventListener('resize', () => {
 });
 
 function applyBg(url) {
-  if (url) { document.body.style.backgroundImage = `url(${url})`; document.body.classList.add('has-bg'); }
-  else { document.body.style.backgroundImage = ''; document.body.classList.remove('has-bg'); }
+  if (url) {
+    document.body.style.cssText += ';background-image:url(' + url + ');background-size:cover;background-position:center;background-attachment:fixed;background-repeat:no-repeat;';
+    document.body.classList.add('has-bg');
+    const app = document.getElementById('app');
+    if (app) { app.style.background = 'transparent'; app.style.minHeight = '100vh'; }
+  } else {
+    document.body.style.backgroundImage = '';
+    document.body.style.backgroundAttachment = '';
+    document.body.classList.remove('has-bg');
+    const app = document.getElementById('app');
+    if (app) app.style.background = '';
+  }
 }
 
 function fmtDate(ds) {
