@@ -378,7 +378,7 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
 <div class="auth-ov" id="authOv">
   <div class="auth-box">
     <div class="auth-logo" style="text-align:center;margin-bottom:10px">
-      <img src="/logo.png" alt="CheckBox Task" style="height:60px;width:auto;object-fit:contain">
+      <img src="/logo.png" alt="CheckBox Task" style="height:70px;width:auto;object-fit:contain;mix-blend-mode:multiply">
     </div>
     <h2 id="authTitle" style="display:none">CheckBox Task</h2>
     <div class="aerr" id="aerr"></div>
@@ -447,7 +447,7 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
 <div class="app" id="app" style="display:none">
   <!-- HEADER -->
   <header class="hdr">
-    <a href="/" style="display:flex;align-items:center;gap:8px;text-decoration:none;flex-shrink:0"><img src="/logo.png" alt="CheckBox Task" style="height:36px;width:auto;object-fit:contain"></a>
+    <a href="/" style="display:flex;align-items:center;gap:8px;text-decoration:none;flex-shrink:0"><img src="/logo.png" alt="CheckBox Task" style="height:38px;width:auto;object-fit:contain;mix-blend-mode:multiply" id="headerLogo"></a>
     <div class="hdr-search">
       <span class="hdr-search-ic">🔍</span>
       <input type="text" id="srch" placeholder="Qidirish..." oninput="onSearch(this.value)">
@@ -552,7 +552,7 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
   <div class="sidebar-drawer-bg" onclick="closeSidebarDrawer()"></div>
   <div class="sidebar-drawer-panel">
     <div class="sidebar-drawer-header">
-      <img src="/logo.png" alt="CheckBox Task" style="height:28px;width:auto;object-fit:contain">
+      <img src="/logo.png" alt="CheckBox Task" style="height:30px;width:auto;object-fit:contain;mix-blend-mode:multiply">
       <button class="sd-close" onclick="closeSidebarDrawer()">✕</button>
     </div>
     <div class="sidebar-section"><div class="sidebar-title">Statistika</div></div>
@@ -601,7 +601,7 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
   <div class="sidebar-drawer-bg" onclick="closeSidebarDrawer()"></div>
   <div class="sidebar-drawer-panel">
     <div class="sidebar-drawer-header">
-      <img src="/logo.png" alt="CheckBox Task" style="height:28px;width:auto;object-fit:contain">
+      <img src="/logo.png" alt="CheckBox Task" style="height:30px;width:auto;object-fit:contain;mix-blend-mode:multiply">
       <button class="sd-close" onclick="closeSidebarDrawer()">✕</button>
     </div>
     <div class="sidebar-section"><div class="sidebar-title">Statistika</div></div>
@@ -690,6 +690,13 @@ function toggleTheme() {
   document.body.dataset.theme = t;
   document.getElementById('thIc').textContent = t === 'light' ? '🌙' : '☀️';
   localStorage.setItem('cbtheme', t);
+  updateLogoBlend(t);
+}
+function updateLogoBlend(theme) {
+  const blend = theme === 'dark' ? 'screen' : 'multiply';
+  document.querySelectorAll('img[src="/logo.png"]').forEach(img => {
+    img.style.mixBlendMode = blend;
+  });
 }
 if (localStorage.getItem('cbtheme') === 'dark') toggleTheme();
 
