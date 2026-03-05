@@ -135,6 +135,30 @@ function deleteTaskDeep(taskId, db) {
   db.tasks    = db.tasks.filter(t => t.id !== taskId);
 }
 
+// ══════════════════════════════════════════
+// PERMISSION HELPER — 'owner'|'edit'|'view'|null
+// ══════════════════════════════════════════
+function getTaskPermission(taskId, userId, userEmail, db) {
+  const task = db.tasks.find(t => t.id === taskId);
+  if (!task) return null;
+  function findRoot(t) {
+    if (!t.parent_id) return t;
+    const p = db.tasks.find(x => x.id === t.parent_id);
+    return p ? findRoot(p) : t;
+  }
+  const root = findRoot(task);
+  // Egasi?
+  const ownList = db.lists.find(l => l.id === root.list_id && l.user_id === userId);
+  if (ownList) return 'owner';
+  // Ulashilganmi?
+  const share = db.shared_tasks.find(s =>
+    s.task_id === root.id &&
+    s.recipient_email === userEmail &&
+    s.status === 'accepted'
+  );
+  return share ? share.permission : null;
+}
+
 // ── AUTH ──
 app.post('/api/register', (req, res) => {
   const { username, password, name } = req.body || {};
