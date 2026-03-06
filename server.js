@@ -130,9 +130,12 @@ function listTasks(listId, db) {
 }
 function deleteTaskDeep(taskId, db) {
   db.tasks.filter(t => t.parent_id === taskId).forEach(c => deleteTaskDeep(c.id, db));
-  db.files    = (db.files    || []).filter(f => f.ref_id  !== taskId);
-  db.comments = (db.comments || []).filter(c => c.task_id !== taskId);
-  db.tasks    = db.tasks.filter(t => t.id !== taskId);
+  db.files       = (db.files       || []).filter(f => f.ref_id  !== taskId);
+  db.comments    = (db.comments    || []).filter(c => c.task_id !== taskId);
+  // MUAMMO 3 FIX: Topshiriq o'chirilganda ulashishlarni ham o'chirish
+  // Bu boshqa foydalanuvchilardagi "Ulashilgan" bo'limdan ham o'chiradi
+  db.shared_tasks = (db.shared_tasks || []).filter(s => s.task_id !== taskId);
+  db.tasks       = db.tasks.filter(t => t.id !== taskId);
 }
 
 // ══════════════════════════════════════════
@@ -337,11 +340,23 @@ app.delete('/api/comments/:id', auth, (req, res) => {
 // ── ARXIV ──
 app.post('/api/tasks/:id/archive', auth, (req, res) => {
   const db = loadDB();
-  const perm = getTaskPermission(req.params.id, req.user.id, req.user.username, db);
-  if (!perm) return res.status(404).json({ error: 'Topilmadi' });
-  if (perm !== 'owner') return res.status(403).json({ error: "Arxivlash faqat topshiriq egasiga ruxsat" });
   const task = db.tasks.find(t => t.id === req.params.id);
-  const list = db.lists.find(l => l.id === task.list_id);
+  if (!task) return res.status(404).json({ error: 'Topilmadi' });
+  // Topshiriq egasi yoki ulashilgan (edit/view) — ikkalasi ham arxivlay oladi
+  // Lekin faqat o'z listiga tegishli taskni arxivlaydi
+  const list = db.lists.find(l => l.id === task.list_id && l.user_id === req.user.id);
+  if (!list) {
+    // Ulashilgan topshiriqmi? — ulashilgan bo'lsa ham arxivlay oladi
+    const perm = getTaskPermission(req.params.id, req.user.id, req.user.username, db);
+    if (!perm) return res.status(403).json({ error: "Ruxsat yo'q" });
+    // Ulashilgan topshiriqni shared_tasks dan o'chiramiz (faqat shu user uchun)
+    // Asl task o'chirilmaydi — faqat ulashish bekor qilinadi
+    db.shared_tasks = db.shared_tasks.filter(s =>
+      !(s.task_id === task.id && s.recipient_email === req.user.username)
+    );
+    saveDB(db);
+    return res.json({ ok: true, shared_removed: true });
+  }
   const tree = buildTaskTree(task.id, db);
   // Files va comments ni task_data ichida saqlaymiz (restore uchun)
   function enrichTree(node) {
@@ -443,29 +458,26 @@ app.post('/api/archive/:id/unarchive', auth, (req, res) => {
       deadline: node.deadline || null,
       created_at: node.created_at || Date.now()
     });
-    // Fayllarni qaytarish
+    // MUAMMO 1 FIX: Fayllarni to'g'ri qaytarish
+    // node.files — fmtFile formatida: {id, name, url:'/uploads/xxx', type, size}
+    // db.files — raw formatda: {id, ref_id, filename:'xxx', name, mimetype, size}
     if (node.files && node.files.length) {
       node.files.forEach(f => {
-        // Fayl fizik mavjudmi?
-        const filepath = require('path').join(__dirname, 'uploads', f.url ? f.url.replace('/uploads/', '') : '');
-        if (require('fs').existsSync(filepath)) {
-          if (!db.files.find(fl => fl.id === f.id)) {
-            db.files.push({
-              id: f.id || nid(), ref_id: newId,
-              filename: f.url ? f.url.replace('/uploads/', '') : '',
-              name: f.name || '', mimetype: f.type || '',
-              size: f.size || 0
-            });
-          } else {
-            // ID band — yangi ID bilan qo'shamiz
-            db.files.push({
-              id: nid(), ref_id: newId,
-              filename: f.url ? f.url.replace('/uploads/', '') : '',
-              name: f.name || '', mimetype: f.type || '',
-              size: f.size || 0
-            });
-          }
-        }
+        // filename ni url dan yoki filename field dan olamiz
+        const filename = f.filename || (f.url ? f.url.replace('/uploads/', '') : '');
+        if (!filename) return;
+        const filepath = path.join(__dirname, 'uploads', filename);
+        // Fizik fayl mavjudmi — majburiy emas, baribir yozamiz (URL bo'lishi kifoya)
+        db.files.push({
+          id: nid(), // Har doim yangi ID — duplicate oldini olish
+          ref_id: newId,
+          filename: filename,
+          name: f.name || filename,
+          mimetype: f.type || f.mimetype || 'application/octet-stream',
+          size: f.size || 0,
+          uploaded_by: f.uploaded_by || '',
+          uploaded_at: Date.now()
+        });
       });
     }
     // Izohlarni qaytarish
