@@ -298,16 +298,17 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
   .task-panel-header{margin-bottom:10px;gap:6px;}
   .task-panel-title{font-size:17px;}
 
-  /* Task card mobil */
-  .t-compact{padding:8px 10px;gap:6px;}
-  .t-name-txt{font-size:13px;}
-  .t-actions{gap:3px;flex-wrap:wrap;}
-  .t-btn{padding:5px 9px;font-size:11px;}
-  select.psel,select.ssel{padding:3px 5px;font-size:11px;}
-  .t-ring{width:26px;height:26px;}
+  /* Task card mobil — ikki qatorli layout */
+  .t-compact{padding:8px 10px;gap:6px;flex-wrap:wrap;}
+  .t-name{width:100%;order:1;min-width:0;flex:1 1 calc(100% - 80px);}
+  .t-name-txt{font-size:14px;font-weight:500;white-space:normal !important;word-break:break-word;overflow:visible !important;text-overflow:unset !important;}
+  .t-exp{order:0;}
+  .t-chk{order:0;}
+  .t-ring{width:26px;height:26px;order:0;}
+  .t-actions{order:2;width:100%;gap:4px;flex-wrap:wrap;padding-top:4px;border-top:1px solid var(--bdr);margin-top:2px;}
+  .t-btn{padding:5px 10px;font-size:11px;}
+  select.psel,select.ssel{padding:4px 6px;font-size:11px;}
   .children{margin-left:12px;padding-left:6px;}
-  /* Mobilda detail tugma katta, boshqalari kichik */
-  .t-btn-detail{padding:6px 12px !important;font-size:12px !important;font-weight:700 !important;}
 
   /* Yangi topshiriq qo'shish */
   .add-task-box{padding:10px;margin-bottom:12px;}
@@ -1535,10 +1536,22 @@ async function delArch(archId) {
 // LISTS CRUD
 // ══════════════════════════════════════════
 async function createList() {
-  const inp = document.getElementById('nlInp'), t = inp.value.trim();
+  // Mobilda nlInpD, desktopda nlInp
+  const inp = document.getElementById('nlInpD') && document.getElementById('nlInpD').value.trim()
+    ? document.getElementById('nlInpD')
+    : document.getElementById('nlInp');
+  const t = inp ? inp.value.trim() : '';
   if (!t) { notify("Nom kiriting", 'err'); return; }
   load(true);
-  try { const l = await api('POST', '/api/lists', { title: t }); lists.push(l); inp.value = ''; notify("Ro'yxat yaratildi!"); calcStats(); renderSidebar(); render(); }
+  try {
+    const l = await api('POST', '/api/lists', { title: t });
+    lists.push(l);
+    // Ikkalasini ham tozalaymiz
+    const d = document.getElementById('nlInp'); if(d) d.value='';
+    const d2 = document.getElementById('nlInpD'); if(d2) d2.value='';
+    notify("Ro'yxat yaratildi! ✅");
+    calcStats(); renderSidebar(); render();
+  }
   catch (e) { notify(e.message, 'err'); } finally { load(false); }
 }
 
