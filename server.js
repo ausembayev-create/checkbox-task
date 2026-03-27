@@ -6,13 +6,38 @@ const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const multer   = require('multer');
 const path     = require('path');
 const fs       = require('fs');
+const crypto   = require('crypto');
+
+// ── PAROL HASHLASH (Node.js built-in crypto) ──
+function hashPassword(pw) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync(pw, salt, 100000, 64, 'sha512').toString('hex');
+  return salt + ':' + hash;
+}
+function verifyPassword(pw, stored) {
+  if (!stored || !stored.includes(':')) return stored === pw;
+  const [salt, hash] = stored.split(':');
+  return crypto.pbkdf2Sync(pw, salt, 100000, 64, 'sha512').toString('hex') === hash;
+}
+
+// ── RATE LIMITING (built-in) ──
+const _rl = new Map();
+function rateLimit(key, max, windowMs) {
+  const now = Date.now();
+  const e = _rl.get(key) || { n: 0, t: now };
+  if (now - e.t > windowMs) { e.n = 1; e.t = now; } else e.n++;
+  _rl.set(key, e);
+  if (_rl.size > 10000) { for (const [k,v] of _rl) { if (now - v.t > windowMs*2) _rl.delete(k); } }
+  return e.n > max;
+}
+
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
 const GOOGLE_CLIENT_ID     = process.env.GOOGLE_CLIENT_ID     || '';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
-const UPLOADS_DIR = path.join(__dirname, 'uploads');
-const DATA_FILE   = process.env.DATA_PATH || path.join(__dirname, 'data.json');
+const UPLOADS_DIR = process.env.UPLOADS_PATH || path.join(__dirname, 'uploads');
+const DATA_FILE   = process.env.DATA_PATH   || path.join(__dirname, 'data.json');
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 // ── DB ──
@@ -37,17 +62,63 @@ function loadDB() {
 function saveDB(db) { fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2)); }
 
 // ── MULTER ──
+const ALLOWED_EXT  = /\.(jpg|jpeg|png|gif|webp|svg|mp4|webm|mov|avi|pdf|doc|docx|xls|xlsx|ppt|pptx|txt|csv|zip|json)$/i;
+const ALLOWED_MIME = ['image/jpeg','image/png','image/gif','image/webp','image/svg+xml',
+  'video/mp4','video/webm','video/quicktime','video/x-msvideo',
+  'application/pdf','application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/plain','text/csv','application/zip','application/x-zip-compressed'];
 const upload = multer({
   storage: multer.diskStorage({
     destination: (req, file, cb) => cb(null, UPLOADS_DIR),
-    filename:    (req, file, cb) => cb(null, Date.now() + '_' + file.originalname.replace(/[^\w.\-]/g, '_').slice(0, 80))
+    filename: (req, file, cb) => {
+      const ext  = path.extname(file.originalname).toLowerCase();
+      const base = path.basename(file.originalname, ext).replace(/[^\w\-]/g,'_').slice(0,50);
+      cb(null, Date.now() + '_' + base + ext);
+    }
   }),
-  limits: { fileSize: 500 * 1024 * 1024 }
+  limits: { fileSize: 200 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!ALLOWED_EXT.test(ext) || !ALLOWED_MIME.includes(file.mimetype))
+      return cb(new Error('Bu fayl turi ruxsat etilmagan'));
+    cb(null, true);
+  }
 });
 
 app.use(express.json({ limit: '10mb' }));
-app.use(cors({ origin: true, credentials: true }));
-app.use(session({ secret: 'cbsecret2024', resave: false, saveUninitialized: false, cookie: { maxAge: 7*24*60*60*1000 } }));
+
+// Xavfsizlik headerlari
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
+// CORS — faqat ruxsat etilgan originlar
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true); // mobile / curl
+    if (origin.endsWith('.railway.app') || origin.includes('localhost') || ALLOWED_ORIGINS.includes(origin))
+      return cb(null, true);
+    cb(new Error('CORS: ruxsat etilmagan'));
+  },
+  credentials: true
+}));
+
+// Session — xavfsiz sozlamalar, env dan secret
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+app.use(session({
+  secret: SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: { maxAge: 7*24*60*60*1000, httpOnly: true, sameSite: 'lax' }
+}));
 app.use(passport.initialize());
 app.use(passport.session());
 app.use('/uploads', express.static(UPLOADS_DIR));
@@ -164,18 +235,26 @@ function getTaskPermission(taskId, userId, userEmail, db) {
 
 // ── AUTH ──
 app.post('/api/register', (req, res) => {
+  const ip = req.ip || 'x';
+  if (rateLimit('reg:'+ip, 5, 60*60*1000)) return res.status(429).json({ error: "Juda ko'p urinish. 1 soat kuting." });
   const { username, password, name } = req.body || {};
   if (!username?.trim() || !password || !name?.trim()) return res.status(400).json({ error: 'Ism, username va parol kerak' });
-  const db = loadDB(); const uname = username.toLowerCase().trim();
+  if (password.length < 6) return res.status(400).json({ error: "Parol kamida 6 ta belgi bo'lishi kerak" });
+  const db = loadDB(); const uname = username.toLowerCase().trim().slice(0,100);
   if (db.users.find(u => u.username === uname)) return res.status(400).json({ error: 'Bu username band' });
-  const user = { id: nid(), username: uname, password, name: name.trim(), surname: '', patronymic: '', google_id: null, avatar: '', bg: '', created_at: Date.now() };
+  const safeName = name.trim().replace(/<[^>]*>/g,'').slice(0,100);
+  const user = { id: nid(), username: uname, password: hashPassword(password), name: safeName, surname: '', patronymic: '', google_id: null, avatar: '', bg: '', created_at: Date.now() };
   db.users.push(user); saveDB(db);
   res.json({ token: mkToken(user), user: safeUser(user) });
 });
 app.post('/api/login', (req, res) => {
-  const { username, password } = req.body || {}; const db = loadDB();
-  const user = db.users.find(u => u.username === (username || '').toLowerCase().trim() && u.password === password);
-  if (!user) return res.status(401).json({ error: "Username yoki parol noto'g'ri" });
+  const ip = req.ip || 'x';
+  if (rateLimit('login:'+ip, 10, 5*60*1000)) return res.status(429).json({ error: "Juda ko'p urinish. 5 daqiqa kuting." });
+  const { username, password } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: 'Username va parol kerak' });
+  const db = loadDB();
+  const user = db.users.find(u => u.username === (username||'').toLowerCase().trim());
+  if (!user || !verifyPassword(password, user.password)) return res.status(401).json({ error: "Username yoki parol noto'g'ri" });
   res.json({ token: mkToken(user), user: safeUser(user) });
 });
 app.get('/api/me', (req, res) => {
@@ -257,7 +336,8 @@ app.get('/api/lists', auth, (req, res) => {
 app.post('/api/lists', auth, (req, res) => {
   if (!req.body.title?.trim()) return res.status(400).json({ error: 'Nom kerak' });
   const db = loadDB();
-  const list = { id: nid(), user_id: req.user.id, title: req.body.title.trim(), created_at: Date.now() };
+  const title = req.body.title.trim().replace(/<[^>]*>/g,'').slice(0,200);
+  const list = { id: nid(), user_id: req.user.id, title, created_at: Date.now() };
   db.lists.push(list); saveDB(db); res.json({ ...list, tasks: [] });
 });
 app.put('/api/lists/:id', auth, (req, res) => {
@@ -656,10 +736,7 @@ app.post('/api/shared-task/:sid/add-child', auth, (req, res) => {
 });
 
 // ── DEBUG (faqat development) ──
-app.get('/api/debug/archive', auth, (req, res) => {
-  const db = loadDB();
-  res.json(db.archive.map(a => ({ id: a.id, user_id: a.user_id, user_id_type: typeof a.user_id, from_list: a.from_list })));
-});
+// app.get('/api/debug/archive') — production da o'chirildi
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
