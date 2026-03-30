@@ -707,25 +707,7 @@ function clean(s) { const d = document.createElement('div'); d.textContent = Str
 function openOv(id) { document.getElementById(id).classList.add('show'); }
 function closeOv(id) { document.getElementById(id).classList.remove('show'); }
 
-async function downloadBackup() {
-  try {
-    notify('Backup yuklanmoqda...');
-    const res = await fetch('/api/admin/backup', {
-      headers: { 'x-token': token || '' }
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      notify(err.error || 'Xatolik', 'err'); return;
-    }
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    const date = new Date().toISOString().slice(0,10);
-    a.href = url; a.download = 'checkbox-backup-' + date + '.json';
-    a.click(); URL.revokeObjectURL(url);
-    notify('Backup yuklab olindi ✅');
-  } catch(e) { notify('Xatolik: ' + e.message, 'err'); }
-}
+
 
 async function downloadBackup() {
   try {
@@ -1002,10 +984,12 @@ async function init() {
 // ══════════════════════════════════════════
 function openProfile() {
   if (!me) return;
-  // Birinchi foydalanuvchi — admin, backup tugmasini ko'rsatish
-  // (server ham tekshiradi, bu faqat UI uchun)
+  // Faqat superadmin ga backup tugmasini ko'rsatish
+  const SUPERADMIN = 'ausembayev@gmail.com';
   const backupWrap = document.getElementById('backupBtnWrap');
-  if (backupWrap) backupWrap.style.display = 'block'; // Har doim ko'rsatamiz, server tekshiradi
+  if (backupWrap) {
+    backupWrap.style.display = (me && me.username === SUPERADMIN) ? 'block' : 'none';
+  }
   const w = document.getElementById('profAvWrap');
   w.innerHTML = me.avatar
     ? `<img src="${me.avatar}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:3px solid var(--p)">`
