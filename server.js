@@ -714,9 +714,10 @@ app.post('/api/shared-task/:sid/add-child', auth, (req, res) => {
 
 app.get('/api/admin/backup', auth, (req, res) => {
   const db = loadDB();
-  // 1. Faqat birinchi (admin) foydalanuvchiga ruxsat
-  if (!db.users.length || String(db.users[0].id) !== String(req.user.id)) {
-    return res.status(403).json({ error: "Faqat admin uchun" });
+  // Faqat superadmin emailga ruxsat
+  const SUPERADMIN_EMAIL = 'ausembayev@gmail.com';
+  if (req.user.username !== SUPERADMIN_EMAIL) {
+    return res.status(403).json({ error: "Ruxsat etilmagan" });
   }
   // 2. So'rov brauzerdan kelganmi tekshirish (tashqi skriptlar blok)
   const origin = req.headers['origin'];
