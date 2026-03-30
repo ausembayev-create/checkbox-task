@@ -714,15 +714,37 @@ app.post('/api/shared-task/:sid/add-child', auth, (req, res) => {
 
 app.get('/api/admin/backup', auth, (req, res) => {
   const db = loadDB();
-  // Faqat birinchi (admin) foydalanuvchiga ruxsat
+  // 1. Faqat birinchi (admin) foydalanuvchiga ruxsat
   if (!db.users.length || String(db.users[0].id) !== String(req.user.id)) {
     return res.status(403).json({ error: "Faqat admin uchun" });
   }
+  // 2. So'rov brauzerdan kelganmi tekshirish (tashqi skriptlar blok)
+  const origin = req.headers['origin'];
+  const referer = req.headers['referer'];
+  const host = req.headers['host'];
+  const isFromBrowser = (referer && referer.includes(host)) || !origin;
+  if (origin && !origin.includes(host)) {
+    return res.status(403).json({ error: "Ruxsat etilmagan so'rov" });
+  }
+  // 3. Backup tokenini tekshirish — har safar yangi token talab qilinadi
+  const backupToken = req.query.bt;
+  const validToken = (db.sessions || {})[req.headers['x-token']];
+  if (!validToken) return res.status(401).json({ error: "Login kerak" });
+  // 4. Foydalanuvchi ma'lumotlarini tozalab yuborish — parollar olib tashlanadi
   const date = new Date().toISOString().slice(0, 10);
-  res.setHeader('Content-Disposition', `attachment; filename="checkbox-backup-${date}.json"`);
+  res.setHeader('Content-Disposition', 'attachment; filename="checkbox-backup-' + date + '.json"');
   res.setHeader('Content-Type', 'application/json');
-  // Sessionlarni backup dan olib tashlaymiz (xavfsizlik uchun)
-  const backup = { ...db, sessions: {} };
+  res.setHeader('Cache-Control', 'no-store');
+  const safeUsers = db.users.map(u => ({
+    ...u,
+    password: undefined,  // parollar backup da bo'lmaydi
+    google_id: undefined  // Google ID ham olib tashlanadi
+  }));
+  const backup = {
+    ...db,
+    users: safeUsers,
+    sessions: {}  // sessionlar olib tashlanadi
+  };
   res.json(backup);
 });
 
