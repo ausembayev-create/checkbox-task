@@ -239,7 +239,7 @@ app.post('/api/register', (req, res) => {
   if (rateLimit('reg:'+ip, 5, 60*60*1000)) return res.status(429).json({ error: "Juda ko'p urinish. 1 soat kuting." });
   const { username, password, name } = req.body || {};
   if (!username?.trim() || !password || !name?.trim()) return res.status(400).json({ error: 'Ism, username va parol kerak' });
-  if (password.length < 6) return res.status(400).json({ error: "Parol kamida 6 ta belgi bo'lishi kerak" });
+  if (password.length < 8) return res.status(400).json({ error: "Parol kamida 8 ta belgi bo'lishi kerak" });
   const db = loadDB(); const uname = username.toLowerCase().trim().slice(0,100);
   if (db.users.find(u => u.username === uname)) return res.status(400).json({ error: 'Bu username band' });
   const safeName = name.trim().replace(/<[^>]*>/g,'').slice(0,100);
@@ -711,32 +711,22 @@ app.post('/api/shared-task/:sid/add-child', auth, (req, res) => {
 
 // ── SHARED TASK OPERATIONS ──
 // Ulashilgan topshiriqqa quyi topshiriq qo'shish
-app.post('/api/shared-task/:sid/add-child', auth, (req, res) => {
+
+app.get('/api/admin/backup', auth, (req, res) => {
   const db = loadDB();
-  const share = db.shared_tasks.find(s => s.id === req.params.sid && s.recipient_email === req.user.username);
-  if (!share) return res.status(404).json({ error: 'Topilmadi' });
-  if (share.permission !== 'edit') return res.status(403).json({ error: "Tahrirlash huquqi yo'q" });
-  const parentTaskId = req.body.parentTaskId;
-  const parentTask = db.tasks.find(t => t.id === parentTaskId);
-  if (!parentTask) return res.status(404).json({ error: 'Asosiy topshiriq topilmadi' });
-  const newTask = {
-    id: nid(), list_id: parentTask.list_id, parent_id: parentTaskId,
-    user_id: parentTask.user_id, text: (req.body.text || '').trim(),
-    completed: false, priority: 'medium', status: 'todo', deadline: null, created_at: Date.now()
-  };
-  db.tasks.push(newTask);
-  try {
-    const td = JSON.parse(share.task_data);
-    if (!td.children) td.children = [];
-    td.children.push({ id: newTask.id, text: newTask.text, completed: false, children: [] });
-    share.task_data = JSON.stringify(td);
-  } catch {}
-  saveDB(db);
-  res.json({ ok: true, task: newTask });
+  // Faqat birinchi (admin) foydalanuvchiga ruxsat
+  if (!db.users.length || String(db.users[0].id) !== String(req.user.id)) {
+    return res.status(403).json({ error: "Faqat admin uchun" });
+  }
+  const date = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Disposition', `attachment; filename="checkbox-backup-${date}.json"`);
+  res.setHeader('Content-Type', 'application/json');
+  // Sessionlarni backup dan olib tashlaymiz (xavfsizlik uchun)
+  const backup = { ...db, sessions: {} };
+  res.json(backup);
 });
 
-// ── DEBUG (faqat development) ──
-// app.get('/api/debug/archive') — production da o'chirildi
+// ── BACKUP ENDPOINT — admin data.json yuklab oladi ──
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
