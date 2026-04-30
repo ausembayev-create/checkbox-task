@@ -69,7 +69,11 @@ const ALLOWED_MIME = ['image/jpeg','image/png','image/gif','image/webp','image/s
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'text/plain','text/csv','application/zip','application/x-zip-compressed'];
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.openxmlformats-officedocument.presentationml.slideshow',
+  'text/plain','text/csv','application/zip','application/x-zip-compressed',
+  'application/octet-stream'];
 const upload = multer({
   storage: multer.diskStorage({
     destination: (req, file, cb) => cb(null, UPLOADS_DIR),
