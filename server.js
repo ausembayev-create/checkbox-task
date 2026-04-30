@@ -8,6 +8,77 @@ const path     = require('path');
 const fs       = require('fs');
 const crypto   = require('crypto');
 
+// ── CLOUDFLARE R2 CONFIG ──
+const R2_ACCOUNT_ID   = process.env.R2_ACCOUNT_ID   || '';
+const R2_ACCESS_KEY   = process.env.R2_ACCESS_KEY_ID || '';
+const R2_SECRET_KEY   = process.env.R2_SECRET_ACCESS_KEY || '';
+const R2_BUCKET       = process.env.R2_BUCKET_NAME   || 'checkbox-task-uploads';
+const R2_PUBLIC_URL   = process.env.R2_PUBLIC_URL    || '';
+const R2_ENDPOINT     = process.env.R2_ENDPOINT      || '';
+const USE_R2          = R2_ACCESS_KEY && R2_SECRET_KEY && R2_ENDPOINT;
+
+// AWS Signature V4 — R2 ga fayl yuklash uchun (npm kerak emas)
+async function r2Upload(filename, buffer, contentType) {
+  const endpoint = R2_ENDPOINT.replace(/\/+$/, '');
+  const url = `${endpoint}/${R2_BUCKET}/${filename}`;
+  const host = new URL(url).host;
+  const region = 'auto';
+  const service = 's3';
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:\-]|\.\d{3}/g, '').slice(0,16) + 'Z';
+  const dateStamp = amzDate.slice(0,8);
+
+  const payloadHash = crypto.createHash('sha256').update(buffer).digest('hex');
+  const headers = {
+    'host': host,
+    'x-amz-date': amzDate,
+    'x-amz-content-sha256': payloadHash,
+    'content-type': contentType,
+    'content-length': String(buffer.length)
+  };
+  const signedHeaders = Object.keys(headers).sort().join(';');
+  const canonicalHeaders = Object.keys(headers).sort().map(k => `${k}:${headers[k]}`).join('\n') + '\n';
+  const canonicalRequest = ['PUT', `/${R2_BUCKET}/${filename}`, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
+  const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
+  const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${credentialScope}\n` + crypto.createHash('sha256').update(canonicalRequest).digest('hex');
+  
+  function hmac(key, data) { return crypto.createHmac('sha256', key).update(data).digest(); }
+  const signingKey = hmac(hmac(hmac(hmac('AWS4' + R2_SECRET_KEY, dateStamp), region), service), 'aws4_request');
+  const signature = crypto.createHmac('sha256', signingKey).update(stringToSign).digest('hex');
+  const authorization = `AWS4-HMAC-SHA256 Credential=${R2_ACCESS_KEY}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { ...headers, 'Authorization': authorization },
+    body: buffer
+  });
+  if (!res.ok) throw new Error(`R2 upload failed: ${res.status} ${await res.text()}`);
+  return `${R2_PUBLIC_URL}/${filename}`;
+}
+
+async function r2Delete(filename) {
+  if (!filename || !USE_R2) return;
+  const endpoint = R2_ENDPOINT.replace(/\/+$/, '');
+  const url = `${endpoint}/${R2_BUCKET}/${filename}`;
+  const host = new URL(url).host;
+  const region = 'auto'; const service = 's3';
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:\-]|\.\d{3}/g, '').slice(0,16) + 'Z';
+  const dateStamp = amzDate.slice(0,8);
+  const payloadHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+  const headers = { 'host': host, 'x-amz-date': amzDate, 'x-amz-content-sha256': payloadHash };
+  const signedHeaders = Object.keys(headers).sort().join(';');
+  const canonicalHeaders = Object.keys(headers).sort().map(k => `${k}:${headers[k]}`).join('\n') + '\n';
+  const canonicalRequest = ['DELETE', `/${R2_BUCKET}/${filename}`, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
+  const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
+  const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${credentialScope}\n` + crypto.createHash('sha256').update(canonicalRequest).digest('hex');
+  function hmac(key, data) { return crypto.createHmac('sha256', key).update(data).digest(); }
+  const signingKey = hmac(hmac(hmac(hmac('AWS4' + R2_SECRET_KEY, dateStamp), region), service), 'aws4_request');
+  const signature = crypto.createHmac('sha256', signingKey).update(stringToSign).digest('hex');
+  const authorization = `AWS4-HMAC-SHA256 Credential=${R2_ACCESS_KEY}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+  await fetch(url, { method: 'DELETE', headers: { ...headers, 'Authorization': authorization } });
+}
+
 // ── PAROL HASHLASH (Node.js built-in crypto) ──
 function hashPassword(pw) {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -187,7 +258,7 @@ function auth(req, res, next) {
   if (user) { req.user = user; return next(); }
   res.status(401).json({ error: 'Login kerak' });
 }
-const fmtFile = f => ({ id: f.id, name: f.name, url: '/uploads/' + f.filename, type: f.mimetype, size: f.size });
+const fmtFile = f => ({ id: f.id, name: f.name, url: f.url || ('/uploads/' + f.filename), type: f.mimetype, size: f.size });
 
 function buildTaskTree(taskId, db) {
   const task = db.tasks.find(t => t.id === taskId); if (!task) return null;
@@ -598,17 +669,39 @@ app.delete('/api/archive/:id', auth, (req, res) => {
 });
 
 // ── FILES ──
-app.post('/api/files', auth, upload.array('files'), (req, res) => {
+app.post('/api/files', auth, upload.array('files'), async (req, res) => {
   const { refId } = req.body; const db = loadDB();
   if (refId) {
     const perm = getTaskPermission(refId, req.user.id, req.user.username, db);
     if (!perm) return res.status(404).json({ error: 'Topilmadi' });
     if (perm === 'view') return res.status(403).json({ error: "Faqat ko'rish huquqi bor, fayl yuklay olmaysiz" });
   }
-  const saved = (req.files || []).map(f => {
-    const file = { id: nid(), ref_id: refId, name: f.originalname, filename: f.filename, mimetype: f.mimetype, size: f.size, uploaded_by: req.user.name, uploaded_at: Date.now() };
-    db.files.push(file); return fmtFile(file);
-  });
+  const saved = [];
+  for (const f of (req.files || [])) {
+    const fileId = nid();
+    let fileUrl, filename;
+    if (USE_R2) {
+      // R2 ga yuklash
+      try {
+        const buffer = fs.readFileSync(f.path);
+        const r2name = fileId + '_' + f.originalname.replace(/[^\w.\-]/g,'_');
+        fileUrl = await r2Upload(r2name, buffer, f.mimetype);
+        filename = r2name;
+        // Local faylni o'chirish
+        try { fs.unlinkSync(f.path); } catch {}
+      } catch(e) {
+        console.error('R2 upload error:', e.message);
+        fileUrl = '/uploads/' + f.filename;
+        filename = f.filename;
+      }
+    } else {
+      fileUrl = '/uploads/' + f.filename;
+      filename = f.filename;
+    }
+    const file = { id: fileId, ref_id: refId, name: f.originalname, filename, url: fileUrl, mimetype: f.mimetype, size: f.size, uploaded_by: req.user.name, uploaded_at: Date.now() };
+    db.files.push(file);
+    saved.push({ id: file.id, name: file.name, url: fileUrl, type: file.mimetype, size: file.size });
+  }
   saveDB(db); res.json(saved);
 });
 app.delete('/api/files/:id', auth, (req, res) => {
@@ -622,8 +715,13 @@ app.delete('/api/files/:id', auth, (req, res) => {
     if (!perm) return res.status(403).json({ error: "Ruxsat yo'q" });
     if (perm === 'view') return res.status(403).json({ error: "Faqat ko'rish huquqi bor, fayl o'chira olmaysiz" });
   }
-  const fp = path.join(UPLOADS_DIR, file.filename);
-  if (fs.existsSync(fp)) try { fs.unlinkSync(fp); } catch {}
+  // Faylni o'chirish — R2 yoki local
+  if (USE_R2 && file.url && file.url.startsWith('http')) {
+    r2Delete(file.filename).catch(e => console.error('R2 delete error:', e.message));
+  } else {
+    const fp = path.join(UPLOADS_DIR, file.filename);
+    if (fs.existsSync(fp)) try { fs.unlinkSync(fp); } catch {}
+  }
   db.files.splice(fileIdx, 1); saveDB(db); res.json({ ok: true });
 });
 
