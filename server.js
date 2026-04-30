@@ -673,6 +673,7 @@ app.delete('/api/archive/:id', auth, (req, res) => {
 
 // ── FILES ──
 app.post('/api/files', auth, upload.array('files'), async (req, res) => {
+  try {
   const { refId } = req.body; const db = loadDB();
   if (refId) {
     const perm = getTaskPermission(refId, req.user.id, req.user.username, db);
@@ -705,7 +706,12 @@ app.post('/api/files', auth, upload.array('files'), async (req, res) => {
     db.files.push(file);
     saved.push({ id: file.id, name: file.name, url: fileUrl, type: file.mimetype, size: file.size });
   }
-  saveDB(db); res.json(saved);
+  try { saveDB(db); } catch(e) { console.error('saveDB error:', e.message); }
+  res.json(saved);
+  } catch(globalErr) {
+    console.error('Upload global error:', globalErr.message, globalErr.stack);
+    res.status(500).json({ error: 'Yuklash xatosi: ' + globalErr.message });
+  }
 });
 app.delete('/api/files/:id', auth, (req, res) => {
   const db = loadDB();
