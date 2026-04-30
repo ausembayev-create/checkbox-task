@@ -20,7 +20,8 @@ const USE_R2          = R2_ACCESS_KEY && R2_SECRET_KEY && R2_ENDPOINT;
 // AWS Signature V4 — R2 ga fayl yuklash uchun (npm kerak emas)
 async function r2Upload(filename, buffer, contentType) {
   const endpoint = R2_ENDPOINT.replace(/\/+$/, '');
-  const url = `${endpoint}/${R2_BUCKET}/${filename}`;
+  // To'g'ri URL: endpoint/bucket/filename
+  const url = `${endpoint}/${R2_BUCKET}/${encodeURIComponent(filename).replace(/%2F/g,'/')}`;
   const host = new URL(url).host;
   const region = 'auto';
   const service = 's3';
@@ -38,7 +39,8 @@ async function r2Upload(filename, buffer, contentType) {
   };
   const signedHeaders = Object.keys(headers).sort().join(';');
   const canonicalHeaders = Object.keys(headers).sort().map(k => `${k}:${headers[k]}`).join('\n') + '\n';
-  const canonicalRequest = ['PUT', `/${R2_BUCKET}/${filename}`, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
+  const s3path = '/' + R2_BUCKET + '/' + filename;
+  const canonicalRequest = ['PUT', s3path, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
   const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
   const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${credentialScope}\n` + crypto.createHash('sha256').update(canonicalRequest).digest('hex');
   
@@ -69,7 +71,8 @@ async function r2Delete(filename) {
   const headers = { 'host': host, 'x-amz-date': amzDate, 'x-amz-content-sha256': payloadHash };
   const signedHeaders = Object.keys(headers).sort().join(';');
   const canonicalHeaders = Object.keys(headers).sort().map(k => `${k}:${headers[k]}`).join('\n') + '\n';
-  const canonicalRequest = ['DELETE', `/${R2_BUCKET}/${filename}`, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
+  const s3pathD = '/' + R2_BUCKET + '/' + filename;
+  const canonicalRequest = ['DELETE', s3pathD, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
   const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
   const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${credentialScope}\n` + crypto.createHash('sha256').update(canonicalRequest).digest('hex');
   function hmac(key, data) { return crypto.createHmac('sha256', key).update(data).digest(); }
@@ -690,7 +693,7 @@ app.post('/api/files', auth, upload.array('files'), async (req, res) => {
         // Local faylni o'chirish
         try { fs.unlinkSync(f.path); } catch {}
       } catch(e) {
-        console.error('R2 upload error:', e.message);
+        console.error('R2 upload error details:', e.message, '| USE_R2:', USE_R2, '| endpoint:', R2_ENDPOINT, '| bucket:', R2_BUCKET);
         fileUrl = '/uploads/' + f.filename;
         filename = f.filename;
       }
