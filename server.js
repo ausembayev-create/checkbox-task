@@ -889,9 +889,30 @@ if (fixedCount > 0) {
 async function migrateLocalFilesToR2() {
   if (!USE_R2) return;
   const db = loadDB();
-  let migrated = 0, freed = 0;
+  const activeTaskIds = new Set((db.tasks || []).map(t => t.id));
+  let migrated = 0, freed = 0, orphansRemoved = 0;
+  let dbChanged = false;
+
+  // 1. Yetim fayllarni (o'chirilgan task ga tegishli) DB dan va R2/diskdan o'chirish
+  const orphanFiles = (db.files || []).filter(f => f.ref_id && !activeTaskIds.has(f.ref_id));
+  for (const f of orphanFiles) {
+    if (USE_R2 && f.url && f.url.startsWith('http')) {
+      r2Delete(f.filename).catch(() => {});
+    } else if (f.filename) {
+      const fp = path.join(UPLOADS_DIR, f.filename);
+      try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch {}
+    }
+    orphansRemoved++;
+  }
+  if (orphansRemoved > 0) {
+    db.files = (db.files || []).filter(f => !f.ref_id || activeTaskIds.has(f.ref_id));
+    db.comments = (db.comments || []).filter(c => activeTaskIds.has(c.task_id));
+    dbChanged = true;
+    console.log(`🗑️  Yetim fayllar o'chirildi: ${orphansRemoved} ta`);
+  }
+
+  // 2. Local fayllarni R2 ga ko'chirish
   for (const file of (db.files || [])) {
-    // Faqat local fayllarni ko'chirish (url /uploads/ bilan boshlanadi)
     if (!file.url || !file.url.startsWith('/uploads/')) continue;
     const localPath = path.join(UPLOADS_DIR, file.filename || path.basename(file.url));
     if (!fs.existsSync(localPath)) continue;
@@ -899,35 +920,32 @@ async function migrateLocalFilesToR2() {
       const buffer = fs.readFileSync(localPath);
       const r2name = file.id + '_' + (file.filename || path.basename(file.url));
       const newUrl = await r2Upload(r2name, buffer, file.mimetype || 'application/octet-stream');
-      // DB da url ni yangilash
       file.url = newUrl;
       file.filename = r2name;
       freed += buffer.length;
-      // Local faylni o'chirish
       try { fs.unlinkSync(localPath); } catch {}
       migrated++;
+      dbChanged = true;
     } catch(e) {
-      console.error('Migrate error for', file.filename, ':', e.message);
+      console.error('Migrate error:', file.filename, e.message);
     }
   }
-  if (migrated > 0) {
-    saveDB(db);
-    console.log(`✅ R2 ga ko'chirildi: ${migrated} ta fayl, ${(freed/1024/1024).toFixed(1)} MB bo'shadi`);
-  }
+  if (migrated > 0) console.log(`✅ R2 ga ko'chirildi: ${migrated} ta fayl (${(freed/1024/1024).toFixed(1)} MB)`);
 
-  // Qolgan keraksiz fayllarni ham o'chirish
+  // 3. Local da yetim fayllarni tozalash
   try {
     const dbFilenames = new Set((db.files || []).map(f => f.filename).filter(Boolean));
-    const localFiles = fs.readdirSync(UPLOADS_DIR);
+    const localFiles = fs.readdirSync(UPLOADS_DIR).filter(f => f !== '.gitkeep');
     let cleaned = 0;
     for (const fname of localFiles) {
-      if (fname === '.gitkeep') continue;
       if (!dbFilenames.has(fname)) {
         try { fs.unlinkSync(path.join(UPLOADS_DIR, fname)); cleaned++; } catch {}
       }
     }
-    if (cleaned > 0) console.log(`🗑️  Keraksiz fayllar: ${cleaned} ta o'chirildi`);
+    if (cleaned > 0) console.log(`🗑️  Local yetim fayllar: ${cleaned} ta o'chirildi`);
   } catch {}
+
+  if (dbChanged) saveDB(db);
 }
 
 app.listen(PORT, async () => {
