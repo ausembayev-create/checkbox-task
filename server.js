@@ -20,66 +20,87 @@ const USE_R2          = R2_ACCESS_KEY && R2_SECRET_KEY && R2_ENDPOINT;
 // AWS Signature V4 — R2 ga fayl yuklash uchun (npm kerak emas)
 async function r2Upload(filename, buffer, contentType) {
   const endpoint = R2_ENDPOINT.replace(/\/+$/, '');
-  // To'g'ri URL: endpoint/bucket/filename
-  const url = `${endpoint}/${R2_BUCKET}/${encodeURIComponent(filename).replace(/%2F/g,'/')}`;
+  const safeFilename = filename.replace(/[^\w.\-]/g, '_');
+  const url = `${endpoint}/${R2_BUCKET}/${safeFilename}`;
   const host = new URL(url).host;
-  const region = 'auto';
-  const service = 's3';
   const now = new Date();
-  const amzDate = now.toISOString().replace(/[:\-]|\.\d{3}/g, '').slice(0,16) + 'Z';
-  const dateStamp = amzDate.slice(0,8);
+  const amzDate = now.toISOString().replace(/[:\-]|\.\d{3}/g,'').slice(0,16) + 'Z';
+  const dateStamp = amzDate.slice(0, 8);
 
+  // Faqat shu 4 ta header imzolanadi — content-length IMZOLANMAYDI (R2 talab qilmaydi)
   const payloadHash = crypto.createHash('sha256').update(buffer).digest('hex');
-  const headers = {
+  const signHeaders = {
     'host': host,
-    'x-amz-date': amzDate,
     'x-amz-content-sha256': payloadHash,
-    'content-type': contentType,
-    'content-length': String(buffer.length)
+    'x-amz-date': amzDate,
   };
-  const signedHeaders = Object.keys(headers).sort().join(';');
-  const canonicalHeaders = Object.keys(headers).sort().map(k => `${k}:${headers[k]}`).join('\n') + '\n';
-  const s3path = '/' + R2_BUCKET + '/' + filename;
-  const canonicalRequest = ['PUT', s3path, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
-  const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
-  const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${credentialScope}\n` + crypto.createHash('sha256').update(canonicalRequest).digest('hex');
-  
-  function hmac(key, data) { return crypto.createHmac('sha256', key).update(data).digest(); }
-  const signingKey = hmac(hmac(hmac(hmac('AWS4' + R2_SECRET_KEY, dateStamp), region), service), 'aws4_request');
-  const signature = crypto.createHmac('sha256', signingKey).update(stringToSign).digest('hex');
-  const authorization = `AWS4-HMAC-SHA256 Credential=${R2_ACCESS_KEY}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+  // Alifbo tartibida saralash
+  const sortedKeys = Object.keys(signHeaders).sort();
+  const canonicalHeaders = sortedKeys.map(k => `${k}:${signHeaders[k]}\n`).join('');
+  const signedHeadersStr = sortedKeys.join(';');
 
+  const canonicalRequest = [
+    'PUT',
+    `/${R2_BUCKET}/${safeFilename}`,
+    '',
+    canonicalHeaders,
+    signedHeadersStr,
+    payloadHash
+  ].join('\n');
+
+  const credScope = `${dateStamp}/auto/s3/aws4_request`;
+  const strToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${credScope}\n` +
+    crypto.createHash('sha256').update(canonicalRequest).digest('hex');
+
+  const hmac = (key, data) => crypto.createHmac('sha256', key).update(data).digest();
+  const sigKey = hmac(hmac(hmac(hmac('AWS4' + R2_SECRET_KEY, dateStamp), 'auto'), 's3'), 'aws4_request');
+  const signature = crypto.createHmac('sha256', sigKey).update(strToSign).digest('hex');
+
+  const authHeader = `AWS4-HMAC-SHA256 Credential=${R2_ACCESS_KEY}/${credScope}, SignedHeaders=${signedHeadersStr}, Signature=${signature}`;
+
+  // Fetch ga yuborish — content-type va content-length fetch o'zi qo'yadi
   const res = await fetch(url, {
     method: 'PUT',
-    headers: { ...headers, 'Authorization': authorization },
+    headers: {
+      'Authorization': authHeader,
+      'x-amz-content-sha256': payloadHash,
+      'x-amz-date': amzDate,
+      'Content-Type': contentType,
+    },
     body: buffer
   });
-  if (!res.ok) throw new Error(`R2 upload failed: ${res.status} ${await res.text()}`);
-  return `${R2_PUBLIC_URL}/${filename}`;
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`R2 upload failed: ${res.status} ${errText}`);
+  }
+  return `${R2_PUBLIC_URL}/${safeFilename}`;
 }
 
 async function r2Delete(filename) {
   if (!filename || !USE_R2) return;
   const endpoint = R2_ENDPOINT.replace(/\/+$/, '');
-  const url = `${endpoint}/${R2_BUCKET}/${filename}`;
+  const safeFilename = filename.replace(/[^\w.\-]/g, '_');
+  const url = `${endpoint}/${R2_BUCKET}/${safeFilename}`;
   const host = new URL(url).host;
-  const region = 'auto'; const service = 's3';
   const now = new Date();
-  const amzDate = now.toISOString().replace(/[:\-]|\.\d{3}/g, '').slice(0,16) + 'Z';
+  const amzDate = now.toISOString().replace(/[:\-]|\.\d{3}/g,'').slice(0,16) + 'Z';
   const dateStamp = amzDate.slice(0,8);
-  const payloadHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
-  const headers = { 'host': host, 'x-amz-date': amzDate, 'x-amz-content-sha256': payloadHash };
-  const signedHeaders = Object.keys(headers).sort().join(';');
-  const canonicalHeaders = Object.keys(headers).sort().map(k => `${k}:${headers[k]}`).join('\n') + '\n';
-  const s3pathD = '/' + R2_BUCKET + '/' + filename;
-  const canonicalRequest = ['DELETE', s3pathD, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
-  const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
-  const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${credentialScope}\n` + crypto.createHash('sha256').update(canonicalRequest).digest('hex');
-  function hmac(key, data) { return crypto.createHmac('sha256', key).update(data).digest(); }
-  const signingKey = hmac(hmac(hmac(hmac('AWS4' + R2_SECRET_KEY, dateStamp), region), service), 'aws4_request');
-  const signature = crypto.createHmac('sha256', signingKey).update(stringToSign).digest('hex');
-  const authorization = `AWS4-HMAC-SHA256 Credential=${R2_ACCESS_KEY}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-  await fetch(url, { method: 'DELETE', headers: { ...headers, 'Authorization': authorization } });
+  const emptyHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+  const signHeaders = { 'host': host, 'x-amz-content-sha256': emptyHash, 'x-amz-date': amzDate };
+  const sortedKeys = Object.keys(signHeaders).sort();
+  const canonicalHeaders = sortedKeys.map(k => `${k}:${signHeaders[k]}\n`).join('');
+  const signedHeadersStr = sortedKeys.join(';');
+  const cr = ['DELETE', `/${R2_BUCKET}/${safeFilename}`, '', canonicalHeaders, signedHeadersStr, emptyHash].join('\n');
+  const credScope = `${dateStamp}/auto/s3/aws4_request`;
+  const sts = `AWS4-HMAC-SHA256\n${amzDate}\n${credScope}\n` + crypto.createHash('sha256').update(cr).digest('hex');
+  const hmac = (k,d) => crypto.createHmac('sha256',k).update(d).digest();
+  const sk = hmac(hmac(hmac(hmac('AWS4'+R2_SECRET_KEY,dateStamp),'auto'),'s3'),'aws4_request');
+  const sig = crypto.createHmac('sha256',sk).update(sts).digest('hex');
+  const auth = `AWS4-HMAC-SHA256 Credential=${R2_ACCESS_KEY}/${credScope}, SignedHeaders=${signedHeadersStr}, Signature=${sig}`;
+  try {
+    await fetch(url, { method:'DELETE', headers:{ 'Authorization':auth, 'x-amz-content-sha256':emptyHash, 'x-amz-date':amzDate } });
+  } catch {}
 }
 
 // ── PAROL HASHLASH (Node.js built-in crypto) ──
