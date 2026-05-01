@@ -279,12 +279,19 @@ function listTasks(listId, db) {
 }
 function deleteTaskDeep(taskId, db) {
   db.tasks.filter(t => t.parent_id === taskId).forEach(c => deleteTaskDeep(c.id, db));
-  db.files       = (db.files       || []).filter(f => f.ref_id  !== taskId);
-  db.comments    = (db.comments    || []).filter(c => c.task_id !== taskId);
-  // MUAMMO 3 FIX: Topshiriq o'chirilganda ulashishlarni ham o'chirish
-  // Bu boshqa foydalanuvchilardagi "Ulashilgan" bo'limdan ham o'chiradi
+  // Fayllarni diskdan va R2 dan o'chirish
+  (db.files || []).filter(f => f.ref_id === taskId).forEach(f => {
+    if (USE_R2 && f.url && f.url.startsWith('http')) {
+      r2Delete(f.filename).catch(() => {});
+    } else if (f.filename) {
+      const fp = path.join(UPLOADS_DIR, f.filename);
+      try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch {}
+    }
+  });
+  db.files        = (db.files       || []).filter(f => f.ref_id  !== taskId);
+  db.comments     = (db.comments    || []).filter(c => c.task_id !== taskId);
   db.shared_tasks = (db.shared_tasks || []).filter(s => s.task_id !== taskId);
-  db.tasks       = db.tasks.filter(t => t.id !== taskId);
+  db.tasks        = db.tasks.filter(t => t.id !== taskId);
 }
 
 // ══════════════════════════════════════════
@@ -879,9 +886,55 @@ if (fixedCount > 0) {
   console.log(`✅ ${fixedCount} ta eski arxiv yozuvi avtomatik tuzatildi`);
 }
 
-app.listen(PORT, () => {
+async function migrateLocalFilesToR2() {
+  if (!USE_R2) return;
+  const db = loadDB();
+  let migrated = 0, freed = 0;
+  for (const file of (db.files || [])) {
+    // Faqat local fayllarni ko'chirish (url /uploads/ bilan boshlanadi)
+    if (!file.url || !file.url.startsWith('/uploads/')) continue;
+    const localPath = path.join(UPLOADS_DIR, file.filename || path.basename(file.url));
+    if (!fs.existsSync(localPath)) continue;
+    try {
+      const buffer = fs.readFileSync(localPath);
+      const r2name = file.id + '_' + (file.filename || path.basename(file.url));
+      const newUrl = await r2Upload(r2name, buffer, file.mimetype || 'application/octet-stream');
+      // DB da url ni yangilash
+      file.url = newUrl;
+      file.filename = r2name;
+      freed += buffer.length;
+      // Local faylni o'chirish
+      try { fs.unlinkSync(localPath); } catch {}
+      migrated++;
+    } catch(e) {
+      console.error('Migrate error for', file.filename, ':', e.message);
+    }
+  }
+  if (migrated > 0) {
+    saveDB(db);
+    console.log(`✅ R2 ga ko'chirildi: ${migrated} ta fayl, ${(freed/1024/1024).toFixed(1)} MB bo'shadi`);
+  }
+
+  // Qolgan keraksiz fayllarni ham o'chirish
+  try {
+    const dbFilenames = new Set((db.files || []).map(f => f.filename).filter(Boolean));
+    const localFiles = fs.readdirSync(UPLOADS_DIR);
+    let cleaned = 0;
+    for (const fname of localFiles) {
+      if (fname === '.gitkeep') continue;
+      if (!dbFilenames.has(fname)) {
+        try { fs.unlinkSync(path.join(UPLOADS_DIR, fname)); cleaned++; } catch {}
+      }
+    }
+    if (cleaned > 0) console.log(`🗑️  Keraksiz fayllar: ${cleaned} ta o'chirildi`);
+  } catch {}
+}
+
+app.listen(PORT, async () => {
   console.log('\n╔══════════════════════════════════════╗');
   console.log('║  ✅  http://localhost:' + PORT + '           ║');
   console.log('╚══════════════════════════════════════╝\n');
   if (!GOOGLE_CLIENT_ID) console.log('ℹ️  Google login sozlanmagan\n');
+  // Local fayllarni R2 ga ko'chirish (Volume bo'shatish)
+  migrateLocalFilesToR2().catch(e => console.error('Migration error:', e.message));
 });
