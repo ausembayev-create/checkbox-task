@@ -493,6 +493,15 @@ app.delete('/api/tasks/:id', auth, (req, res) => {
 });
 
 // ── COMMENTS ──
+// Topshiriq fayllarini olish
+app.get('/api/tasks/:id/files', auth, (req, res) => {
+  const db = loadDB();
+  const perm = getTaskPermission(req.params.id, req.user.id, req.user.username, db);
+  if (!perm) return res.status(404).json({ error: 'Topilmadi' });
+  const files = (db.files || []).filter(f => f.ref_id === req.params.id).map(fmtFile);
+  res.json(files);
+});
+
 app.get('/api/tasks/:id/comments', auth, (req, res) => {
   const db = loadDB();
   res.json((db.comments || []).filter(c => c.task_id === req.params.id).sort((a, b) => a.created_at - b.created_at));

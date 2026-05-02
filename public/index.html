@@ -1259,7 +1259,6 @@ function rmFromTree(tasks, id) { const i = tasks.findIndex(t => t.id === id); if
 
 async function openDetail(taskId, perm) {
   detailTaskId = taskId;
-  // View huquqi — fayl yuklash va o'chirish tugmalarini yashirish
   const isViewOnly = perm === 'view';
   const uploadBtn = document.getElementById('dpFileUploadBtn');
   if (uploadBtn) uploadBtn.style.display = isViewOnly ? 'none' : 'block';
@@ -1270,8 +1269,15 @@ async function openDetail(taskId, perm) {
   const task = findInTree(l.tasks || [], taskId);
   if (!task) return;
   document.getElementById('dpTitle').textContent = task.text;
-  renderDetailFiles(task.files || [], perm === 'view');
-  // Load fresh comments
+  // Serverdan fresh fayllarni olamiz (arxivdan qaytgan tasklar uchun ham)
+  try {
+    const freshFiles = await api('GET', `/api/tasks/${taskId}/files`);
+    task.files = freshFiles;
+    renderDetailFiles(freshFiles, isViewOnly);
+  } catch {
+    renderDetailFiles(task.files || [], isViewOnly);
+  }
+  // Izohlar
   try {
     const comments = await api('GET', `/api/tasks/${taskId}/comments`);
     task.comments = comments;
@@ -1284,6 +1290,43 @@ function closeDetail() {
   document.getElementById('detailPanel').classList.add('hidden');
 }
 
+function openFile(e, url, name) {
+  e.preventDefault();
+  if (!url) return;
+  // Rasm va videolar — sayt ichida ko'rsatish
+  const ext = url.split('.').pop().toLowerCase().split('?')[0];
+  const isImage = ['jpg','jpeg','png','gif','webp','svg'].includes(ext);
+  const isVideo = ['mp4','webm','mov','avi'].includes(ext);
+  if (isImage || isVideo) {
+    // Modal ochib ko'rsatish
+    const modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:pointer';
+    modal.onclick = () => document.body.removeChild(modal);
+    if (isImage) {
+      const img = document.createElement('img');
+      img.src = url;
+      img.style.cssText = 'max-width:95vw;max-height:95vh;border-radius:8px;object-fit:contain';
+      modal.appendChild(img);
+    } else {
+      const vid = document.createElement('video');
+      vid.src = url; vid.controls = true; vid.autoplay = true;
+      vid.style.cssText = 'max-width:95vw;max-height:95vh;border-radius:8px';
+      modal.appendChild(vid);
+    }
+    const close = document.createElement('button');
+    close.textContent = '✕';
+    close.style.cssText = 'position:absolute;top:16px;right:20px;background:none;border:none;color:#fff;font-size:28px;cursor:pointer';
+    close.onclick = e => { e.stopPropagation(); document.body.removeChild(modal); };
+    modal.appendChild(close);
+    document.body.appendChild(modal);
+  } else {
+    // PDF, doc, pptx va boshqalar — yuklab olish
+    const a = document.createElement('a');
+    a.href = url; a.download = name || 'file';
+    a.click();
+  }
+}
+
 function renderDetailFiles(files) {
   const el = document.getElementById('dpFiles');
   if (!files.length) { el.innerHTML = '<p style="font-size:13px;color:var(--sub);margin-bottom:8px">Fayllar yo\'q</p>'; return; }
@@ -1291,7 +1334,7 @@ function renderDetailFiles(files) {
     <div class="file-item">
       <span class="file-icon">${fileIcon(f.type)}</span>
       <span class="file-name">${clean(f.name)}</span>
-      <a href="${f.url}" class="file-link" target="_blank">Ko'rish</a>
+      <a href="${f.url}" class="file-link" onclick="openFile(event,'${f.url}','${clean(f.name)}')">Ko'rish</a>
       <button class="file-del" onclick="deleteFile('${f.id}')">🗑️</button>
     </div>`).join('');
 }
