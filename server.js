@@ -20,87 +20,83 @@ const USE_R2          = R2_ACCESS_KEY && R2_SECRET_KEY && R2_ENDPOINT;
 // AWS Signature V4 — R2 ga fayl yuklash uchun (npm kerak emas)
 async function r2Upload(filename, buffer, contentType) {
   const endpoint = R2_ENDPOINT.replace(/\/+$/, '');
-  const safeFilename = filename.replace(/[^\w.\-]/g, '_');
-  const url = `${endpoint}/${R2_BUCKET}/${safeFilename}`;
+  const safe = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const url = `${endpoint}/${R2_BUCKET}/${safe}`;
   const host = new URL(url).host;
+
   const now = new Date();
-  const amzDate = now.toISOString().replace(/[:\-]|\.\d{3}/g,'').slice(0,16) + 'Z';
-  const dateStamp = amzDate.slice(0, 8);
+  // amzDate: yyyyMMddTHHmmssZ — muhim: to'liq format
+  const pad = n => String(n).padStart(2,'0');
+  const amzDate = `${now.getUTCFullYear()}${pad(now.getUTCMonth()+1)}${pad(now.getUTCDate())}T${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}Z`;
+  const dateStamp = amzDate.slice(0,8);
 
-  // Faqat shu 4 ta header imzolanadi — content-length IMZOLANMAYDI (R2 talab qilmaydi)
   const payloadHash = crypto.createHash('sha256').update(buffer).digest('hex');
-  const signHeaders = {
-    'host': host,
-    'x-amz-content-sha256': payloadHash,
-    'x-amz-date': amzDate,
-  };
-  // Alifbo tartibida saralash
-  const sortedKeys = Object.keys(signHeaders).sort();
-  const canonicalHeaders = sortedKeys.map(k => `${k}:${signHeaders[k]}\n`).join('');
-  const signedHeadersStr = sortedKeys.join(';');
 
-  const canonicalRequest = [
-    'PUT',
-    `/${R2_BUCKET}/${safeFilename}`,
-    '',
-    canonicalHeaders,
-    signedHeadersStr,
-    payloadHash
-  ].join('\n');
+  // Canonical request — headerlar alifbo tartibida, har biri yangi qatorda
+  const ch = `host:${host}
+x-amz-content-sha256:${payloadHash}
+x-amz-date:${amzDate}
+`;
+  const sh = 'host;x-amz-content-sha256;x-amz-date';
+  const cr = `PUT
+/${R2_BUCKET}/${safe}
 
-  const credScope = `${dateStamp}/auto/s3/aws4_request`;
-  const strToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${credScope}\n` +
-    crypto.createHash('sha256').update(canonicalRequest).digest('hex');
+${ch}
+${sh}
+${payloadHash}`;
 
-  const hmac = (key, data) => crypto.createHmac('sha256', key).update(data).digest();
-  const sigKey = hmac(hmac(hmac(hmac('AWS4' + R2_SECRET_KEY, dateStamp), 'auto'), 's3'), 'aws4_request');
-  const signature = crypto.createHmac('sha256', sigKey).update(strToSign).digest('hex');
+  const scope = `${dateStamp}/auto/s3/aws4_request`;
+  const sts = `AWS4-HMAC-SHA256
+${amzDate}
+${scope}
+${crypto.createHash('sha256').update(cr).digest('hex')}`;
 
-  const authHeader = `AWS4-HMAC-SHA256 Credential=${R2_ACCESS_KEY}/${credScope}, SignedHeaders=${signedHeadersStr}, Signature=${signature}`;
+  const H = (k, d) => crypto.createHmac('sha256', k).update(d).digest();
+  const sk = H(H(H(H(Buffer.from('AWS4' + R2_SECRET_KEY), dateStamp), 'auto'), 's3'), 'aws4_request');
+  const sig = crypto.createHmac('sha256', sk).update(sts).digest('hex');
+  const auth = `AWS4-HMAC-SHA256 Credential=${R2_ACCESS_KEY}/${scope}, SignedHeaders=${sh}, Signature=${sig}`;
 
-  // Fetch ga yuborish — content-type va content-length fetch o'zi qo'yadi
   const res = await fetch(url, {
     method: 'PUT',
     headers: {
-      'Authorization': authHeader,
+      'Authorization': auth,
+      'Content-Type': contentType,
+      'Content-Length': String(buffer.length),
       'x-amz-content-sha256': payloadHash,
       'x-amz-date': amzDate,
-      'Content-Type': contentType,
     },
-    body: buffer
+    body: buffer,
+    duplex: 'half'
   });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`R2 upload failed: ${res.status} ${errText}`);
-  }
-  return `${R2_PUBLIC_URL}/${safeFilename}`;
+  if (!res.ok) throw new Error(`R2 upload failed: ${res.status} ${await res.text()}`);
+  return `${R2_PUBLIC_URL}/${safe}`;
 }
 
 async function r2Delete(filename) {
   if (!filename || !USE_R2) return;
-  const endpoint = R2_ENDPOINT.replace(/\/+$/, '');
-  const safeFilename = filename.replace(/[^\w.\-]/g, '_');
-  const url = `${endpoint}/${R2_BUCKET}/${safeFilename}`;
-  const host = new URL(url).host;
-  const now = new Date();
-  const amzDate = now.toISOString().replace(/[:\-]|\.\d{3}/g,'').slice(0,16) + 'Z';
-  const dateStamp = amzDate.slice(0,8);
-  const emptyHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
-  const signHeaders = { 'host': host, 'x-amz-content-sha256': emptyHash, 'x-amz-date': amzDate };
-  const sortedKeys = Object.keys(signHeaders).sort();
-  const canonicalHeaders = sortedKeys.map(k => `${k}:${signHeaders[k]}\n`).join('');
-  const signedHeadersStr = sortedKeys.join(';');
-  const cr = ['DELETE', `/${R2_BUCKET}/${safeFilename}`, '', canonicalHeaders, signedHeadersStr, emptyHash].join('\n');
-  const credScope = `${dateStamp}/auto/s3/aws4_request`;
-  const sts = `AWS4-HMAC-SHA256\n${amzDate}\n${credScope}\n` + crypto.createHash('sha256').update(cr).digest('hex');
-  const hmac = (k,d) => crypto.createHmac('sha256',k).update(d).digest();
-  const sk = hmac(hmac(hmac(hmac('AWS4'+R2_SECRET_KEY,dateStamp),'auto'),'s3'),'aws4_request');
-  const sig = crypto.createHmac('sha256',sk).update(sts).digest('hex');
-  const auth = `AWS4-HMAC-SHA256 Credential=${R2_ACCESS_KEY}/${credScope}, SignedHeaders=${signedHeadersStr}, Signature=${sig}`;
   try {
-    await fetch(url, { method:'DELETE', headers:{ 'Authorization':auth, 'x-amz-content-sha256':emptyHash, 'x-amz-date':amzDate } });
-  } catch {}
+    const endpoint = R2_ENDPOINT.replace(/\/+$/, '');
+    const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const objectUrl = `${endpoint}/${R2_BUCKET}/${safeFilename}`;
+    const parsedUrl = new URL(objectUrl);
+    const host = parsedUrl.host;
+    const canonicalUri = parsedUrl.pathname;
+    const now = new Date();
+    const amzDate = now.toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,'').slice(0,15) + 'Z';
+    const dateStamp = amzDate.slice(0, 8);
+    const emptyHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+    const signedHeaderNames = 'host;x-amz-content-sha256;x-amz-date';
+    const canonicalHeaders = `host:${host}\nx-amz-content-sha256:${emptyHash}\nx-amz-date:${amzDate}\n`;
+    const cr = ['DELETE', canonicalUri, '', canonicalHeaders, signedHeaderNames, emptyHash].join('\n');
+    const credentialScope = `${dateStamp}/auto/s3/aws4_request`;
+    const hashedCR = crypto.createHash('sha256').update(cr).digest('hex');
+    const sts = `AWS4-HMAC-SHA256\n${amzDate}\n${credentialScope}\n${hashedCR}`;
+    const hmac = (k,d,e) => crypto.createHmac('sha256',k).update(d).digest(e);
+    const sk = hmac(hmac(hmac(hmac('AWS4'+R2_SECRET_KEY,dateStamp),'auto'),'s3'),'aws4_request');
+    const sig = hmac(sk, sts, 'hex');
+    const auth = `AWS4-HMAC-SHA256 Credential=${R2_ACCESS_KEY}/${credentialScope}, SignedHeaders=${signedHeaderNames}, Signature=${sig}`;
+    await fetch(objectUrl, { method:'DELETE', headers:{ 'Authorization':auth, 'x-amz-content-sha256':emptyHash, 'x-amz-date':amzDate } });
+  } catch(e) { console.error('r2Delete error:', e.message); }
 }
 
 // ── PAROL HASHLASH (Node.js built-in crypto) ──
@@ -546,7 +542,13 @@ app.post('/api/tasks/:id/archive', auth, (req, res) => {
   const tree = buildTaskTree(task.id, db);
   // Files va comments ni task_data ichida saqlaymiz (restore uchun)
   function enrichTree(node) {
-    node.files    = (db.files    || []).filter(f => f.ref_id  === node.id);
+    // Fayllarni to'liq saqlash (url field bilan birga)
+    node.files = (db.files || []).filter(f => f.ref_id === node.id).map(f => ({
+      id: f.id, name: f.name, filename: f.filename,
+      url: f.url || ('/uploads/' + f.filename),  // URL ni saqlaymiz
+      type: f.mimetype, size: f.size,
+      uploaded_by: f.uploaded_by
+    }));
     node.comments = (db.comments || []).filter(c => c.task_id === node.id);
     (node.children || []).forEach(c => enrichTree(c));
     return node;
@@ -570,8 +572,12 @@ app.post('/api/lists/:lid/archive-completed', auth, (req, res) => {
     const tree = buildTaskTree(task.id, db);
     // Files va comments saqlash
     (function enrichNode(n){
-      n.files    = (db.files    || []).filter(f => f.ref_id  === n.id);
-      n.comments = (db.comments || []).filter(c => c.task_id === n.id);
+      n.files = (db.files||[]).filter(f=>f.ref_id===n.id).map(f=>({
+        id:f.id, name:f.name, filename:f.filename,
+        url: f.url || ('/uploads/'+f.filename),
+        type:f.mimetype, size:f.size, uploaded_by:f.uploaded_by
+      }));
+      n.comments = (db.comments||[]).filter(c=>c.task_id===n.id);
       (n.children||[]).forEach(enrichNode);
     })(tree);
     db.archive.push({ id: nid(), user_id: String(req.user.id), task_data: JSON.stringify(tree), from_list: list.title, list_id: list.id, archived_at: Date.now() });
@@ -644,21 +650,20 @@ app.post('/api/archive/:id/unarchive', auth, (req, res) => {
       deadline: node.deadline || null,
       created_at: node.created_at || Date.now()
     });
-    // MUAMMO 1 FIX: Fayllarni to'g'ri qaytarish
-    // node.files — fmtFile formatida: {id, name, url:'/uploads/xxx', type, size}
-    // db.files — raw formatda: {id, ref_id, filename:'xxx', name, mimetype, size}
+    // Fayllarni qaytarish — R2 va local URL larni to'g'ri saqlash
     if (node.files && node.files.length) {
       node.files.forEach(f => {
-        // filename ni url dan yoki filename field dan olamiz
-        const filename = f.filename || (f.url ? f.url.replace('/uploads/', '') : '');
-        if (!filename) return;
-        const filepath = path.join(__dirname, 'uploads', filename);
-        // Fizik fayl mavjudmi — majburiy emas, baribir yozamiz (URL bo'lishi kifoya)
+        const fileUrl = f.url || '';
+        const isR2 = fileUrl.startsWith('http');
+        // filename: R2 da to'liq URL dan oxirgi qism, local da /uploads/ dan keyin
+        const filename = f.filename ||
+          (isR2 ? fileUrl.split('/').pop() : fileUrl.replace('/uploads/', ''));
         db.files.push({
-          id: nid(), // Har doim yangi ID — duplicate oldini olish
+          id: nid(),
           ref_id: newId,
-          filename: filename,
-          name: f.name || filename,
+          filename: filename || '',
+          url: isR2 ? fileUrl : null,  // R2 URL ni saqlaymiz
+          name: f.name || filename || '',
           mimetype: f.type || f.mimetype || 'application/octet-stream',
           size: f.size || 0,
           uploaded_by: f.uploaded_by || '',
