@@ -415,6 +415,7 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
     <div id="profAvWrap" style="text-align:center;margin-bottom:14px"></div>
     <label class="flbl">📷 Avatar o'zgartirish<input type="file" class="finp" id="avFile" accept="image/*" onchange="uploadAvatar(this)" style="display:none"></label>
     <label class="flbl gray">🖼️ Fon rasmi yuklash<input type="file" id="bgFile" accept="image/*" onchange="uploadBg(this)" style="display:none"></label>
+    <button class="flbl" id="removeBgBtn" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;display:none" onclick="removeBg()">🗑️ Fon rasmini o'chirish</button>
     <div style="display:flex;gap:8px;margin-bottom:10px">
       <input class="m-inp" id="profName" placeholder="Ism *" style="margin:0">
       <input class="m-inp" id="profSurname" placeholder="Familya" style="margin:0">
@@ -709,6 +710,19 @@ function closeOv(id) { document.getElementById(id).classList.remove('show'); }
 
 
 
+async function removeBg() {
+  if (!confirm("Fon rasmini o'chirasizmi?")) return;
+  try {
+    const d = await api('PUT', '/api/profile', { bg: '' });
+    me.bg = '';
+    localStorage.setItem('cbuser', JSON.stringify(me));
+    applyBg('');
+    const btn = document.getElementById('removeBgBtn');
+    if (btn) btn.style.display = 'none';
+    notify("Fon rasmi o'chirildi ✅");
+  } catch(e) { notify('Xatolik: ' + e.message, 'err'); }
+}
+
 async function downloadBackup() {
   try {
     notify('Backup yuklanmoqda...');
@@ -990,6 +1004,9 @@ function openProfile() {
   if (backupWrap) {
     backupWrap.style.display = (me && me.username === SUPERADMIN) ? 'block' : 'none';
   }
+  // Fon rasmi bor bo'lsa o'chirish tugmasini ko'rsatish
+  const removeBgBtn = document.getElementById('removeBgBtn');
+  if (removeBgBtn) removeBgBtn.style.display = (me && me.bg) ? 'block' : 'none';
   const w = document.getElementById('profAvWrap');
   w.innerHTML = me.avatar
     ? `<img src="${me.avatar}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:3px solid var(--p)">`
