@@ -156,8 +156,14 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
 .file-item{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg);border-radius:7px;margin-bottom:6px;}
 .file-icon{font-size:18px;flex-shrink:0;}
 .file-name{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.file-link{color:var(--p);text-decoration:none;font-size:12px;}
+.file-link{color:var(--p);text-decoration:none;font-size:12px;padding:2px 8px;border:1px solid var(--p);border-radius:5px;transition:background .15s;}.file-link:hover{background:var(--p);color:#fff;}
 .file-del{background:none;border:none;cursor:pointer;color:var(--no);font-size:14px;flex-shrink:0;}
+/* ── FILE VIEWER MODAL ── */
+#fileViewerModal { animation: fvFadeIn .18s ease; }
+@keyframes fvFadeIn { from { opacity:0; } to { opacity:1; } }
+#fileViewerModal img, #fileViewerModal video { transition: transform .15s; }
+#fileViewerModal img:active { transform: scale(1.02); }
+
 /* Upload progress */
 .upload-prog{background:var(--bg);border-radius:7px;padding:10px;margin-bottom:8px;display:none;}
 .up-bar-wrap{background:#e9ecef;border-radius:4px;height:7px;overflow:hidden;margin:5px 0;}
@@ -1290,40 +1296,109 @@ function closeDetail() {
   document.getElementById('detailPanel').classList.add('hidden');
 }
 
-function openFile(e, url, name) {
+function openFile(e, url, name, mime) {
   e.preventDefault();
   if (!url) return;
-  // Rasm va videolar — sayt ichida ko'rsatish
   const ext = url.split('.').pop().toLowerCase().split('?')[0];
-  const isImage = ['jpg','jpeg','png','gif','webp','svg'].includes(ext);
-  const isVideo = ['mp4','webm','mov','avi'].includes(ext);
-  if (isImage || isVideo) {
-    // Modal ochib ko'rsatish
+  const mimeStr = (mime || '').toLowerCase();
+
+  const isImage = ['jpg','jpeg','png','gif','webp','svg'].includes(ext) || mimeStr.startsWith('image/');
+  const isVideo = ['mp4','webm','mov','avi'].includes(ext) || mimeStr.startsWith('video/');
+  const isPDF   = ext === 'pdf' || mimeStr.includes('pdf');
+  const isTxt   = ['txt','csv','json'].includes(ext) || mimeStr.startsWith('text/');
+  const isOffice = ['doc','docx','xls','xlsx','ppt','pptx'].includes(ext)
+    || mimeStr.includes('word') || mimeStr.includes('sheet') || mimeStr.includes('presentation')
+    || mimeStr.includes('powerpoint') || mimeStr.includes('excel');
+
+  // Viewer modal yaratish
+  function createModal(contentEl, titleText) {
+    // Eski modalni o'chirish
+    const old = document.getElementById('fileViewerModal');
+    if (old) document.body.removeChild(old);
+
     const modal = document.createElement('div');
-    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:pointer';
-    modal.onclick = () => document.body.removeChild(modal);
-    if (isImage) {
-      const img = document.createElement('img');
-      img.src = url;
-      img.style.cssText = 'max-width:95vw;max-height:95vh;border-radius:8px;object-fit:contain';
-      modal.appendChild(img);
-    } else {
-      const vid = document.createElement('video');
-      vid.src = url; vid.controls = true; vid.autoplay = true;
-      vid.style.cssText = 'max-width:95vw;max-height:95vh;border-radius:8px';
-      modal.appendChild(vid);
-    }
-    const close = document.createElement('button');
-    close.textContent = '✕';
-    close.style.cssText = 'position:absolute;top:16px;right:20px;background:none;border:none;color:#fff;font-size:28px;cursor:pointer';
-    close.onclick = e => { e.stopPropagation(); document.body.removeChild(modal); };
-    modal.appendChild(close);
+    modal.id = 'fileViewerModal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;';
+
+    // Header
+    const hdr = document.createElement('div');
+    hdr.style.cssText = 'width:100%;max-width:1100px;display:flex;align-items:center;padding:12px 16px;gap:10px;flex-shrink:0;';
+    const title = document.createElement('span');
+    title.textContent = titleText || name || '';
+    title.style.cssText = 'color:#fff;font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    const dlBtn = document.createElement('a');
+    dlBtn.href = url; dlBtn.download = name || 'file';
+    dlBtn.textContent = '⬇️ Yuklab olish';
+    dlBtn.style.cssText = 'color:#7dd3fc;font-size:12px;text-decoration:none;padding:4px 10px;border:1px solid #7dd3fc;border-radius:6px;flex-shrink:0;';
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '✕';
+    closeBtn.style.cssText = 'background:none;border:none;color:#fff;font-size:24px;cursor:pointer;padding:0 4px;flex-shrink:0;line-height:1;';
+    closeBtn.onclick = () => document.body.removeChild(modal);
+    hdr.appendChild(title); hdr.appendChild(dlBtn); hdr.appendChild(closeBtn);
+
+    // Content wrapper
+    const body = document.createElement('div');
+    body.style.cssText = 'flex:1;width:100%;max-width:1100px;overflow:auto;display:flex;align-items:center;justify-content:center;padding:8px 16px 20px;box-sizing:border-box;';
+    body.appendChild(contentEl);
+
+    modal.appendChild(hdr);
+    modal.appendChild(body);
+
+    // ESC tugmasini bosish
+    const onKey = (ev) => { if (ev.key === 'Escape') { document.body.removeChild(modal); document.removeEventListener('keydown', onKey); } };
+    document.addEventListener('keydown', onKey);
+    // Orqa fonga bosish — content ga tegmasa yopiladi
+    modal.addEventListener('click', (ev) => { if (ev.target === modal) { document.body.removeChild(modal); document.removeEventListener('keydown', onKey); } });
+
     document.body.appendChild(modal);
+  }
+
+  if (isImage) {
+    const img = document.createElement('img');
+    img.src = url;
+    img.style.cssText = 'max-width:100%;max-height:88vh;border-radius:8px;object-fit:contain;box-shadow:0 4px 32px rgba(0,0,0,.5);';
+    createModal(img);
+
+  } else if (isVideo) {
+    const vid = document.createElement('video');
+    vid.src = url; vid.controls = true; vid.autoplay = true;
+    vid.style.cssText = 'max-width:100%;max-height:88vh;border-radius:8px;box-shadow:0 4px 32px rgba(0,0,0,.5);';
+    createModal(vid);
+
+  } else if (isPDF) {
+    const iframe = document.createElement('iframe');
+    iframe.src = url;
+    iframe.style.cssText = 'width:100%;height:88vh;border:none;border-radius:8px;background:#fff;';
+    createModal(iframe, '📕 ' + (name||'PDF'));
+
+  } else if (isTxt) {
+    // Matn faylini fetch qilib ko'rsatamiz
+    const pre = document.createElement('pre');
+    pre.style.cssText = 'background:#1e1e1e;color:#d4d4d4;padding:20px;border-radius:8px;font-size:13px;line-height:1.6;overflow:auto;max-height:88vh;width:100%;box-sizing:border-box;white-space:pre-wrap;word-break:break-all;';
+    pre.textContent = 'Yuklanmoqda...';
+    createModal(pre, '📄 ' + (name||''));
+    fetch(url).then(r => r.text()).then(t => { pre.textContent = t; }).catch(() => { pre.textContent = 'Faylni o\'qib bo\'lmadi.'; });
+
+  } else if (isOffice) {
+    // Google Docs Viewer orqali ko'rsatamiz
+    const fullUrl = url.startsWith('http') ? url : (window.location.origin + url);
+    const viewerUrl = 'https://docs.google.com/gview?url=' + encodeURIComponent(fullUrl) + '&embedded=true';
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'width:100%;height:88vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;';
+    const spinner = document.createElement('div');
+    spinner.style.cssText = 'color:#fff;font-size:14px;';
+    spinner.textContent = 'Yuklanmoqda...';
+    const iframe = document.createElement('iframe');
+    iframe.src = viewerUrl;
+    iframe.style.cssText = 'width:100%;height:88vh;border:none;border-radius:8px;background:#fff;display:none;';
+    iframe.onload = () => { spinner.style.display = 'none'; iframe.style.display = 'block'; };
+    wrap.appendChild(spinner); wrap.appendChild(iframe);
+    createModal(wrap, '📄 ' + (name||''));
+
   } else {
-    // PDF, doc, pptx va boshqalar — yuklab olish
+    // Boshqa fayl turlari — yuklab olish
     const a = document.createElement('a');
-    a.href = url; a.download = name || 'file';
-    a.click();
+    a.href = url; a.download = name || 'file'; a.click();
   }
 }
 
@@ -1334,7 +1409,7 @@ function renderDetailFiles(files) {
     <div class="file-item">
       <span class="file-icon">${fileIcon(f.type)}</span>
       <span class="file-name">${clean(f.name)}</span>
-      <a href="${f.url}" class="file-link" onclick="openFile(event,'${f.url}','${clean(f.name)}')">Ko'rish</a>
+      <a href="${f.url}" class="file-link" onclick="openFile(event,'${f.url}','${clean(f.name)}','${f.type||''}')">Ko'rish</a>
       <button class="file-del" onclick="deleteFile('${f.id}')">🗑️</button>
     </div>`).join('');
 }
