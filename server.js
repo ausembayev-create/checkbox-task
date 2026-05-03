@@ -246,7 +246,7 @@ if (GOOGLE_CLIENT_ID) {
 app.get('/auth/google/status', (req, res) => res.json({ configured: !!GOOGLE_CLIENT_ID }));
 
 // ── HELPERS ──
-const nid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const nid = () => crypto.randomUUID ? crypto.randomUUID().replace(/-/g,'') : (Date.now().toString(36) + Math.random().toString(36).slice(2,8) + Math.random().toString(36).slice(2,8));
 const safeUser = (u) => ({ id: u.id, username: u.username, name: u.name, surname: u.surname || '', patronymic: u.patronymic || '', avatar: u.avatar || '', bg: u.bg || '' });
 
 // Tokenlar data.json ga saqlanadi — Railway restart bo'lsa ham yo'qolmaydi
@@ -552,11 +552,14 @@ app.post('/api/tasks/:id/archive', auth, (req, res) => {
   const tree = buildTaskTree(task.id, db);
   // Files va comments ni task_data ichida saqlaymiz (restore uchun)
   function enrichTree(node) {
-    // Fayllarni to'liq saqlash (url field bilan birga)
     node.files = (db.files || []).filter(f => f.ref_id === node.id).map(f => ({
-      id: f.id, name: f.name, filename: f.filename,
+      original_id: f.id,        // Asl fayl IDsi — restore qilganda proxy uchun ishlatiladi
+      id: f.id,
+      name: f.name,
+      filename: f.filename,
       url: (f.url && f.url.startsWith('http')) ? f.url : ('/uploads/' + f.filename),
-      type: f.mimetype, size: f.size,
+      type: f.mimetype,
+      size: f.size,
       uploaded_by: f.uploaded_by
     }));
     node.comments = (db.comments || []).filter(c => c.task_id === node.id);
@@ -687,23 +690,25 @@ app.post('/api/archive/:id/unarchive', auth, (req, res) => {
       deadline: node.deadline || null,
       created_at: node.created_at || Date.now()
     });
-    // Fayllarni qaytarish — R2 va local URL larni to'g'ri saqlash
+    // Fayllarni qaytarish
     if (node.files && node.files.length) {
       node.files.forEach(f => {
         const fileUrl = f.url || '';
         const isR2 = fileUrl.startsWith('http');
-        // filename ni aniqlash:
-        // - R2: fileUrl oxirgi qism (allaqachon safe nom)
-        // - local: /uploads/ dan keyin yoki f.filename
         const filename = f.filename ||
           (isR2 ? fileUrl.split('/').pop() : fileUrl.replace('/uploads/', ''));
-        if (!filename) return; // filename yo'q bo'lsa o'tkazib yuboramiz
+        if (!filename && !isR2) return;
+
+        // Yangi unikal ID — restore qilingan fayl uchun
+        const newFileId = nid();
+
         db.files.push({
-          id: nid(),
+          id: newFileId,
+          original_id: f.original_id || f.id || null,  // Asl ID ni saqlaymiz — kerak bo'lsa topish uchun
           ref_id: newId,
-          filename: filename,
-          url: isR2 ? fileUrl : null,  // R2 URL ni saqlaymiz, local uchun null (fmtFile /uploads/+filename ishlatadi)
-          name: f.name || filename,
+          filename: filename || '',
+          url: isR2 ? fileUrl : null,
+          name: f.name || filename || '',
           mimetype: f.type || f.mimetype || 'application/octet-stream',
           size: f.size || 0,
           uploaded_by: f.uploaded_by || '',
@@ -818,7 +823,8 @@ app.delete('/api/files/:id', auth, (req, res) => {
 // ── FAYL PROXY — barcha fayl turlari uchun (R2 public access shart emas) ──
 app.get('/api/files/:id/proxy', auth, async (req, res) => {
   const db = loadDB();
-  const file = (db.files || []).find(f => f.id === req.params.id);
+  // id orqali topamiz — yoki original_id orqali (restore qilingan fayllar uchun)
+  const file = (db.files || []).find(f => f.id === req.params.id || f.original_id === req.params.id);
   if (!file) return res.status(404).json({ error: 'Topilmadi' });
   if (file.ref_id) {
     const perm = getTaskPermission(file.ref_id, req.user.id, req.user.username, db);
@@ -887,7 +893,7 @@ app.get('/api/files/:id/proxy', auth, async (req, res) => {
 // ── FAYL MATNINI O'QISH (TXT, CSV, JSON) — R2 CORS muammosini hal qiladi ──
 app.get('/api/files/:id/content', auth, async (req, res) => {
   const db = loadDB();
-  const file = (db.files || []).find(f => f.id === req.params.id);
+  const file = (db.files || []).find(f => f.id === req.params.id || f.original_id === req.params.id);
   if (!file) return res.status(404).json({ error: 'Topilmadi' });
   // Huquq tekshirish
   if (file.ref_id) {
