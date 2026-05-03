@@ -821,10 +821,26 @@ app.get('/api/files/:id/proxy', auth, async (req, res) => {
     if (!perm) return res.status(403).json({ error: "Ruxsat yo'q" });
   }
   try {
-    if (USE_R2 && file.url && file.url.startsWith('http')) {
-      // R2 dan server orqali uzatish
-      const resp = await fetch(file.url);
-      if (!resp.ok) return res.status(502).send('R2 xatosi: ' + resp.status);
+    // R2 URL ni aniqlash: saqlangan url, yoki endpoint+bucket+filename dan reconstruct
+    let r2Url = null;
+    if (USE_R2) {
+      if (file.url && file.url.startsWith('http')) {
+        r2Url = file.url;
+      } else if (file.filename) {
+        // URL yo'q yoki noto'g'ri — R2_ENDPOINT dan reconstruct
+        const endpoint = R2_ENDPOINT.replace(/\/+$/, '');
+        const safe = file.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+        r2Url = `${endpoint}/${R2_BUCKET}/${safe}`;
+      }
+    }
+
+    if (r2Url) {
+      console.log('[PROXY] R2 URL:', r2Url);
+      const resp = await fetch(r2Url);
+      if (!resp.ok) {
+        console.error('[PROXY] R2 xatosi:', resp.status, r2Url);
+        return res.status(502).send('R2 xatosi: ' + resp.status + ' | URL: ' + r2Url);
+      }
       const ct = file.mimetype || resp.headers.get('content-type') || 'application/octet-stream';
       res.setHeader('Content-Type', ct);
       res.setHeader('Content-Disposition', 'inline; filename="' + encodeURIComponent(file.name || 'file') + '"');
@@ -833,13 +849,15 @@ app.get('/api/files/:id/proxy', auth, async (req, res) => {
       res.send(buf);
     } else {
       // Local fayl
-      const fp = path.join(UPLOADS_DIR, file.filename || path.basename(file.url || ''));
-      if (!fs.existsSync(fp)) return res.status(404).send('Fayl topilmadi');
+      const fname = file.filename || path.basename((file.url || '').replace(/^\/uploads\//, ''));
+      const fp = path.join(UPLOADS_DIR, fname);
+      if (!fs.existsSync(fp)) return res.status(404).send('Fayl topilmadi: ' + fname);
       res.setHeader('Content-Disposition', 'inline; filename="' + encodeURIComponent(file.name || 'file') + '"');
       res.setHeader('Cache-Control', 'private, max-age=3600');
       res.sendFile(fp);
     }
   } catch(e) {
+    console.error('[PROXY] catch xatosi:', e.message);
     res.status(500).json({ error: 'Proxy xatosi: ' + e.message });
   }
 });
@@ -856,14 +874,25 @@ app.get('/api/files/:id/content', auth, async (req, res) => {
   }
   try {
     let text;
-    if (USE_R2 && file.url && file.url.startsWith('http')) {
-      // R2 dan server orqali o'qish
-      const resp = await fetch(file.url);
-      if (!resp.ok) return res.status(502).json({ error: 'R2 dan o\'qib bo\'lmadi: ' + resp.status });
-      text = await resp.text();
-    } else {
+    if (USE_R2) {
+      let r2Url = null;
+      if (file.url && file.url.startsWith('http')) {
+        r2Url = file.url;
+      } else if (file.filename) {
+        const endpoint = R2_ENDPOINT.replace(/\/+$/, '');
+        const safe = file.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+        r2Url = `${endpoint}/${R2_BUCKET}/${safe}`;
+      }
+      if (r2Url) {
+        const resp = await fetch(r2Url);
+        if (!resp.ok) return res.status(502).json({ error: 'R2 xatosi: ' + resp.status });
+        text = await resp.text();
+      }
+    }
+    if (text === undefined) {
       // Local fayldan o'qish
-      const fp = path.join(UPLOADS_DIR, file.filename || path.basename(file.url || ''));
+      const fname = file.filename || path.basename((file.url || '').replace(/^\/uploads\//, ''));
+      const fp = path.join(UPLOADS_DIR, fname);
       if (!fs.existsSync(fp)) return res.status(404).json({ error: 'Fayl diskda topilmadi' });
       text = fs.readFileSync(fp, 'utf8');
     }

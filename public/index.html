@@ -1430,19 +1430,58 @@ function openFile(e, url, name, mime, fileId) {
       .catch(err => { pre.textContent = 'Faylni o\'qib bo\'lmadi: ' + err.message; });
 
   } else if (isOffice) {
-    const fullUrl = url.startsWith('http') ? url : (window.location.origin + url);
-    const viewerUrl = 'https://docs.google.com/gview?url=' + encodeURIComponent(fullUrl) + '&embedded=true';
-    const wrap = document.createElement('div');
-    wrap.style.cssText = 'width:100%;height:88vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;';
-    const spinner = document.createElement('div');
-    spinner.style.cssText = 'color:#fff;font-size:14px;';
-    spinner.textContent = 'Yuklanmoqda...';
-    const iframe = document.createElement('iframe');
-    iframe.src = viewerUrl;
-    iframe.style.cssText = 'width:100%;height:88vh;border:none;border-radius:8px;background:#fff;display:none;';
-    iframe.onload = () => { spinner.style.display = 'none'; iframe.style.display = 'block'; };
-    wrap.appendChild(spinner); wrap.appendChild(iframe);
-    createModal(wrap, '📄 ' + (name||''));
+    // Office fayllarni proxy orqali blob URL ga o'tkazib Google Docs Viewer ga beramiz
+    if (proxyUrl) {
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'width:100%;height:88vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;';
+      const spinner = document.createElement('div');
+      spinner.style.cssText = 'color:#fff;font-size:14px;';
+      spinner.textContent = 'Yuklanmoqda...';
+      wrap.appendChild(spinner);
+      createModal(wrap, '📄 ' + (name||''));
+      // Blob URL yaratib yuklab olish taklif qilamiz (Google Docs Viewer private URL ni ocholmaydi)
+      try {
+        const resp = await fetch(proxyUrl, { headers: { 'x-token': token } });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const blob = await resp.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const modal = document.getElementById('fileViewerModal');
+        if (!modal) return;
+        const body = modal.querySelector('div:last-child');
+        if (body) {
+          body.innerHTML = '';
+          const iframe = document.createElement('iframe');
+          iframe.src = blobUrl;
+          iframe.style.cssText = 'width:100%;height:88vh;border:none;border-radius:8px;background:#fff;';
+          body.appendChild(iframe);
+        }
+      } catch(err) {
+        const modal = document.getElementById('fileViewerModal');
+        if (modal) {
+          const body = modal.querySelector('div:last-child');
+          if (body) body.innerHTML = `<div style="color:#fff;text-align:center;padding:40px">
+            <div style="font-size:48px;margin-bottom:16px">📄</div>
+            <div style="font-size:15px;margin-bottom:8px">${name||''}</div>
+            <div style="font-size:13px;color:#f87171;margin-bottom:20px">Ko'rib bo'lmadi: ${err.message}</div>
+            <a href="${url}" download="${name||'file'}" style="color:#7dd3fc;padding:8px 20px;border:1px solid #7dd3fc;border-radius:8px;text-decoration:none">⬇️ Yuklab olish</a>
+          </div>`;
+        }
+      }
+    } else {
+      const fullUrl = url.startsWith('http') ? url : (window.location.origin + url);
+      const viewerUrl = 'https://docs.google.com/gview?url=' + encodeURIComponent(fullUrl) + '&embedded=true';
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'width:100%;height:88vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;';
+      const spinner = document.createElement('div');
+      spinner.style.cssText = 'color:#fff;font-size:14px;';
+      spinner.textContent = 'Yuklanmoqda...';
+      const iframe = document.createElement('iframe');
+      iframe.src = viewerUrl;
+      iframe.style.cssText = 'width:100%;height:88vh;border:none;border-radius:8px;background:#fff;display:none;';
+      iframe.onload = () => { spinner.style.display = 'none'; iframe.style.display = 'block'; };
+      wrap.appendChild(spinner); wrap.appendChild(iframe);
+      createModal(wrap, '📄 ' + (name||''));
+    }
 
   } else {
     const a = document.createElement('a');
