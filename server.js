@@ -153,9 +153,10 @@ function loadDB() {
 function saveDB(db) { fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2)); }
 
 // ── MULTER ──
-const ALLOWED_EXT  = /\.(jpg|jpeg|png|gif|webp|svg|mp4|webm|mov|avi|pdf|doc|docx|xls|xlsx|ppt|pptx|txt|csv|zip|json)$/i;
+const ALLOWED_EXT  = /\.(jpg|jpeg|png|gif|webp|svg|mp4|webm|mov|avi|mp3|pdf|doc|docx|xls|xlsx|ppt|pptx|txt|csv|zip|json)$/i;
 const ALLOWED_MIME = ['image/jpeg','image/png','image/gif','image/webp','image/svg+xml',
   'video/mp4','video/webm','video/quicktime','video/x-msvideo',
+  'audio/mpeg','audio/mp3',
   'application/pdf','application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/vnd.ms-excel',
