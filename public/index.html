@@ -1440,8 +1440,8 @@ async function openFile(e, url, name, mime, fileId) {
     const fetchUrl = contentUrl || url;
     fetch(fetchUrl, contentUrl ? { headers: { 'x-token': token } } : {})
       .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
-      .then(t => { pre.textContent = t || '(fayl bo'sh)'; })
-      .catch(err => { pre.textContent = 'O'qib bo'lmadi: ' + err.message; });
+      .then(t => { pre.textContent = t || '(fayl bosh)'; })
+      .catch(err => { pre.textContent = 'Oqib bolmadi: ' + err.message; });
 
   // ── OFFICE (doc, docx, xls, xlsx, ppt, pptx) ──
   } else if (isOffice) {
