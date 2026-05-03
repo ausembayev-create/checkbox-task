@@ -1443,18 +1443,32 @@ async function openFile(e, url, name, mime, fileId) {
       .then(t => { pre.textContent = t || '(fayl bosh)'; })
       .catch(err => { pre.textContent = 'Oqib bolmadi: ' + err.message; });
 
-  // ── OFFICE (doc, docx, xls, xlsx, ppt, pptx) ──
+  // ── OFFICE (doc, docx, xls, xlsx, ppt, pptx) — yangi tabda ochish ──
   } else if (isOffice) {
-    const icons = {docx:'📘',doc:'📘',xlsx:'📗',xls:'📗',pptx:'📙',ppt:'📙'};
-    const icon = icons[ext] || '📄';
-    const wrap = document.createElement('div');
-    wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:16px;padding:48px 20px;';
-    wrap.innerHTML = `
-      <div style="font-size:56px">${icon}</div>
-      <div style="color:#e2e8f0;font-size:15px;font-weight:600;text-align:center;max-width:360px;word-break:break-word;">${name||''}</div>
-      <div style="color:#64748b;font-size:13px;">Bu fayl brauzerda ko'rib bo'lmaydi</div>
-      <a href="${url}" download="${name||'file'}" style="background:#3b82f6;color:#fff;padding:10px 28px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:500;margin-top:8px;">⬇️ Yuklab olish</a>`;
-    createModal(wrap);
+    if (proxyUrl) {
+      // Proxy orqali blob URL yaratib yangi tabda ochamiz
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      try {
+        const resp = await fetch(proxyUrl, { headers: { 'x-token': token } });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const blob = await resp.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        a.href = blobUrl;
+        a.target = '_blank';
+        a.click();
+        setTimeout(() => { URL.revokeObjectURL(blobUrl); document.body.removeChild(a); }, 3000);
+      } catch(err) {
+        document.body.removeChild(a);
+        // Yuklab olishga fallback
+        const dl = document.createElement('a');
+        dl.href = url; dl.download = name || 'file'; dl.click();
+      }
+    } else {
+      const a = document.createElement('a');
+      a.href = url; a.target = '_blank'; a.click();
+    }
 
   // ── BOSHQALAR (zip, json va hokazo) — yuklab olish ──
   } else {
