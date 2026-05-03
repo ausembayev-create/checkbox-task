@@ -156,14 +156,8 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
 .file-item{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg);border-radius:7px;margin-bottom:6px;}
 .file-icon{font-size:18px;flex-shrink:0;}
 .file-name{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.file-link{color:var(--p);text-decoration:none;font-size:12px;padding:2px 8px;border:1px solid var(--p);border-radius:5px;transition:background .15s;}.file-link:hover{background:var(--p);color:#fff;}
+.file-link{color:var(--p);text-decoration:none;font-size:12px;}
 .file-del{background:none;border:none;cursor:pointer;color:var(--no);font-size:14px;flex-shrink:0;}
-/* ── FILE VIEWER MODAL ── */
-#fileViewerModal { animation: fvFadeIn .18s ease; }
-@keyframes fvFadeIn { from { opacity:0; } to { opacity:1; } }
-#fileViewerModal img, #fileViewerModal video { transition: transform .15s; }
-#fileViewerModal img:active { transform: scale(1.02); }
-
 /* Upload progress */
 .upload-prog{background:var(--bg);border-radius:7px;padding:10px;margin-bottom:8px;display:none;}
 .up-bar-wrap{background:#e9ecef;border-radius:4px;height:7px;overflow:hidden;margin:5px 0;}
@@ -421,19 +415,12 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
     <div id="profAvWrap" style="text-align:center;margin-bottom:14px"></div>
     <label class="flbl">📷 Avatar o'zgartirish<input type="file" class="finp" id="avFile" accept="image/*" onchange="uploadAvatar(this)" style="display:none"></label>
     <label class="flbl gray">🖼️ Fon rasmi yuklash<input type="file" id="bgFile" accept="image/*" onchange="uploadBg(this)" style="display:none"></label>
-    <button class="flbl" id="removeBgBtn" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;display:none" onclick="removeBg()">🗑️ Fon rasmini o'chirish</button>
     <div style="display:flex;gap:8px;margin-bottom:10px">
       <input class="m-inp" id="profName" placeholder="Ism *" style="margin:0">
       <input class="m-inp" id="profSurname" placeholder="Familya" style="margin:0">
     </div>
     <input class="m-inp" id="profPat" placeholder="Otasining ismi">
     <button class="m-btn c-p" onclick="saveProfile()">💾 Saqlash</button>
-    <div id="backupBtnWrap" style="display:none;margin-top:6px">
-      <button class="m-btn" style="background:#17a2b8;color:#fff" onclick="downloadBackup()">
-        📥 Ma'lumotlarni zaxira qilish (backup)
-      </button>
-      <div style="font-size:11px;color:var(--sub);text-align:center;margin-top:4px">Faqat admin uchun</div>
-    </div>
   </div>
 </div>
 
@@ -540,7 +527,7 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
             <div id="dpFileUploadBtn">
             <label class="ibtn c-p" style="display:block;text-align:center;padding:8px;cursor:pointer;border-radius:8px;font-size:13px;font-weight:600">
               📎 Fayl / Rasm / Video qo'shish
-              <input type="file" id="dpFileInp" multiple accept="image/*,video/*,.pdf,.doc,.docx,.txt,.xls,.xlsx,.ppt,.pptx,.csv,.zip" style="display:none" onchange="uploadDetailFile(this)">
+              <input type="file" id="dpFileInp" multiple accept="image/*,video/*,.pdf,.doc,.docx,.txt,.xlsx,.zip" style="display:none" onchange="uploadDetailFile(this)">
             </label>
             </div>
           </div>
@@ -713,35 +700,6 @@ function load(v) { document.getElementById('ld').classList.toggle('on', v); }
 function clean(s) { const d = document.createElement('div'); d.textContent = String(s || ''); return d.innerHTML; }
 function openOv(id) { document.getElementById(id).classList.add('show'); }
 function closeOv(id) { document.getElementById(id).classList.remove('show'); }
-
-
-
-async function removeBg() {
-  if (!confirm("Fon rasmini o'chirasizmi?")) return;
-  try {
-    const d = await api('PUT', '/api/profile', { bg: '' });
-    me.bg = '';
-    localStorage.setItem('cbuser', JSON.stringify(me));
-    applyBg('');
-    const btn = document.getElementById('removeBgBtn');
-    if (btn) btn.style.display = 'none';
-    notify("Fon rasmi o'chirildi ✅");
-  } catch(e) { notify('Xatolik: ' + e.message, 'err'); }
-}
-
-async function downloadBackup() {
-  try {
-    notify('Backup yuklanmoqda...');
-    const res = await fetch('/api/admin/backup', { headers: { 'x-token': token || '' } });
-    if (!res.ok) { const e = await res.json(); notify(e.error || 'Xatolik', 'err'); return; }
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'checkbox-backup-' + new Date().toISOString().slice(0,10) + '.json';
-    a.click(); URL.revokeObjectURL(url);
-    notify('Backup yuklab olindi ✅');
-  } catch(e) { notify('Xatolik: ' + e.message, 'err'); }
-}
 
 function toggleTheme() {
   const t = document.body.dataset.theme === 'light' ? 'dark' : 'light';
@@ -1004,15 +962,6 @@ async function init() {
 // ══════════════════════════════════════════
 function openProfile() {
   if (!me) return;
-  // Faqat superadmin ga backup tugmasini ko'rsatish
-  const SUPERADMIN = 'ausembayev@gmail.com';
-  const backupWrap = document.getElementById('backupBtnWrap');
-  if (backupWrap) {
-    backupWrap.style.display = (me && me.username === SUPERADMIN) ? 'block' : 'none';
-  }
-  // Fon rasmi bor bo'lsa o'chirish tugmasini ko'rsatish
-  const removeBgBtn = document.getElementById('removeBgBtn');
-  if (removeBgBtn) removeBgBtn.style.display = (me && me.bg) ? 'block' : 'none';
   const w = document.getElementById('profAvWrap');
   w.innerHTML = me.avatar
     ? `<img src="${me.avatar}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:3px solid var(--p)">`
@@ -1265,6 +1214,7 @@ function rmFromTree(tasks, id) { const i = tasks.findIndex(t => t.id === id); if
 
 async function openDetail(taskId, perm) {
   detailTaskId = taskId;
+  // View huquqi — fayl yuklash va o'chirish tugmalarini yashirish
   const isViewOnly = perm === 'view';
   const uploadBtn = document.getElementById('dpFileUploadBtn');
   if (uploadBtn) uploadBtn.style.display = isViewOnly ? 'none' : 'block';
@@ -1275,15 +1225,8 @@ async function openDetail(taskId, perm) {
   const task = findInTree(l.tasks || [], taskId);
   if (!task) return;
   document.getElementById('dpTitle').textContent = task.text;
-  // Serverdan fresh fayllarni olamiz (arxivdan qaytgan tasklar uchun ham)
-  try {
-    const freshFiles = await api('GET', `/api/tasks/${taskId}/files`);
-    task.files = freshFiles;
-    renderDetailFiles(freshFiles, isViewOnly);
-  } catch {
-    renderDetailFiles(task.files || [], isViewOnly);
-  }
-  // Izohlar
+  renderDetailFiles(task.files || [], perm === 'view');
+  // Load fresh comments
   try {
     const comments = await api('GET', `/api/tasks/${taskId}/comments`);
     task.comments = comments;
@@ -1296,185 +1239,6 @@ function closeDetail() {
   document.getElementById('detailPanel').classList.add('hidden');
 }
 
-async function openFile(e, url, name, mime, fileId) {
-  e.preventDefault();
-  if (!url) return;
-
-  // Agar fileId bo'lsa — server proxy URL ishlatamiz (R2 public access shart emas)
-  const token = localStorage.getItem('cbtoken') || '';
-  const proxyUrl = fileId ? `/api/files/${fileId}/proxy` : null;
-  const contentUrl = fileId ? `/api/files/${fileId}/content` : null;
-
-  const ext = (url.split('.').pop() || '').toLowerCase().split('?')[0];
-  const mimeStr = (mime || '').toLowerCase();
-
-  const isImage  = ['jpg','jpeg','png','gif','webp','svg'].includes(ext) || mimeStr.startsWith('image/');
-  const isVideo  = ['mp4','webm','mov','avi'].includes(ext) || mimeStr.startsWith('video/');
-  const isPDF    = ext === 'pdf' || mimeStr.includes('pdf');
-  const isTxt    = ['txt','csv','json'].includes(ext) || mimeStr.startsWith('text/');
-  const isOffice = ['doc','docx','xls','xlsx','ppt','pptx'].includes(ext)
-    || mimeStr.includes('word') || mimeStr.includes('sheet') || mimeStr.includes('presentation')
-    || mimeStr.includes('powerpoint') || mimeStr.includes('excel');
-
-  function createModal(contentEl, titleText) {
-    const old = document.getElementById('fileViewerModal');
-    if (old) document.body.removeChild(old);
-
-    const modal = document.createElement('div');
-    modal.id = 'fileViewerModal';
-    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;';
-
-    const hdr = document.createElement('div');
-    hdr.style.cssText = 'width:100%;max-width:1100px;display:flex;align-items:center;padding:12px 16px;gap:10px;flex-shrink:0;';
-    const title = document.createElement('span');
-    title.textContent = titleText || name || '';
-    title.style.cssText = 'color:#fff;font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-    const dlBtn = document.createElement('a');
-    dlBtn.href = url; dlBtn.download = name || 'file';
-    dlBtn.textContent = '⬇️ Yuklab olish';
-    dlBtn.style.cssText = 'color:#7dd3fc;font-size:12px;text-decoration:none;padding:4px 10px;border:1px solid #7dd3fc;border-radius:6px;flex-shrink:0;';
-    const closeBtn = document.createElement('button');
-    closeBtn.textContent = '✕';
-    closeBtn.style.cssText = 'background:none;border:none;color:#fff;font-size:24px;cursor:pointer;padding:0 4px;flex-shrink:0;line-height:1;';
-    closeBtn.onclick = () => document.body.removeChild(modal);
-    hdr.appendChild(title); hdr.appendChild(dlBtn); hdr.appendChild(closeBtn);
-
-    const body = document.createElement('div');
-    body.style.cssText = 'flex:1;width:100%;max-width:1100px;overflow:auto;display:flex;align-items:center;justify-content:center;padding:8px 16px 20px;box-sizing:border-box;';
-    body.appendChild(contentEl);
-
-    modal.appendChild(hdr);
-    modal.appendChild(body);
-
-    const onKey = (ev) => { if (ev.key === 'Escape') { document.body.removeChild(modal); document.removeEventListener('keydown', onKey); } };
-    document.addEventListener('keydown', onKey);
-    modal.addEventListener('click', (ev) => { if (ev.target === modal) { document.body.removeChild(modal); document.removeEventListener('keydown', onKey); } });
-    document.body.appendChild(modal);
-  }
-
-  // Proxy orqali blob URL yaratish (rasm va video uchun)
-  async function loadViaProxy(renderFn) {
-    const loadingEl = document.createElement('div');
-    loadingEl.style.cssText = 'color:#fff;font-size:14px;';
-    loadingEl.textContent = 'Yuklanmoqda...';
-    createModal(loadingEl);
-    try {
-      const resp = await fetch(proxyUrl, { headers: { 'x-token': token } });
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      const blob = await resp.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const modal = document.getElementById('fileViewerModal');
-      if (!modal) return;
-      const body = modal.querySelector('div:last-child');
-      if (body) { body.innerHTML = ''; body.appendChild(renderFn(blobUrl)); }
-    } catch(err) {
-      const modal = document.getElementById('fileViewerModal');
-      if (modal) { const body = modal.querySelector('div:last-child'); if (body) body.innerHTML = '<p style="color:#f87171">Faylni yuklab bo\'lmadi: ' + err.message + '</p>'; }
-    }
-  }
-
-  if (isImage) {
-    if (proxyUrl) {
-      loadViaProxy(blobUrl => {
-        const img = document.createElement('img');
-        img.src = blobUrl;
-        img.style.cssText = 'max-width:100%;max-height:88vh;border-radius:8px;object-fit:contain;box-shadow:0 4px 32px rgba(0,0,0,.5);';
-        return img;
-      });
-    } else {
-      const img = document.createElement('img');
-      img.src = url;
-      img.style.cssText = 'max-width:100%;max-height:88vh;border-radius:8px;object-fit:contain;box-shadow:0 4px 32px rgba(0,0,0,.5);';
-      createModal(img);
-    }
-
-  } else if (isVideo) {
-    if (proxyUrl) {
-      loadViaProxy(blobUrl => {
-        const vid = document.createElement('video');
-        vid.src = blobUrl; vid.controls = true; vid.autoplay = true;
-        vid.style.cssText = 'max-width:100%;max-height:88vh;border-radius:8px;box-shadow:0 4px 32px rgba(0,0,0,.5);';
-        return vid;
-      });
-    } else {
-      const vid = document.createElement('video');
-      vid.src = url; vid.controls = true; vid.autoplay = true;
-      vid.style.cssText = 'max-width:100%;max-height:88vh;border-radius:8px;';
-      createModal(vid);
-    }
-
-  } else if (isPDF) {
-    if (proxyUrl) {
-      loadViaProxy(blobUrl => {
-        const iframe = document.createElement('iframe');
-        iframe.src = blobUrl;
-        iframe.style.cssText = 'width:100%;height:88vh;border:none;border-radius:8px;background:#fff;';
-        return iframe;
-      });
-    } else {
-      const iframe = document.createElement('iframe');
-      iframe.src = url;
-      iframe.style.cssText = 'width:100%;height:88vh;border:none;border-radius:8px;background:#fff;';
-      createModal(iframe, '📕 ' + (name||'PDF'));
-    }
-
-  } else if (isTxt) {
-    const pre = document.createElement('pre');
-    pre.style.cssText = 'background:#1e1e1e;color:#d4d4d4;padding:20px;border-radius:8px;font-size:13px;line-height:1.6;overflow:auto;max-height:88vh;width:100%;box-sizing:border-box;white-space:pre-wrap;word-break:break-all;';
-    pre.textContent = 'Yuklanmoqda...';
-    createModal(pre, '📄 ' + (name||''));
-    const fetchUrl = contentUrl || url;
-    fetch(fetchUrl, contentUrl ? { headers: { 'x-token': token } } : {})
-      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
-      .then(t => { pre.textContent = t || '(fayl bo\'sh)'; })
-      .catch(err => { pre.textContent = 'Faylni o\'qib bo\'lmadi: ' + err.message; });
-
-  } else if (isOffice) {
-    // Office fayllar (docx, xlsx, pptx) — proxy orqali yuklab olish taklif
-    // Blob URL iframe da brauzer xavfsizlik sababli ishlamaydi
-    // Eng ishonchli yechim: yuklab olish + tashqi viewer havolasi
-    const wrap = document.createElement('div');
-    wrap.style.cssText = 'width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:20px;';
-    
-    const extIcon = {'docx':'📘','doc':'📘','xlsx':'📗','xls':'📗','pptx':'📙','ppt':'📙'};
-    const fileExt = (name||'').split('.').pop().toLowerCase();
-    const icon = extIcon[fileExt] || '📄';
-    
-    wrap.innerHTML = `
-      <div style="font-size:64px">${icon}</div>
-      <div style="color:#fff;font-size:16px;font-weight:600;text-align:center;max-width:400px;word-break:break-word">${name||''}</div>
-      <div style="color:#94a3b8;font-size:13px;text-align:center">Bu fayl turi brauzerda to'g'ridan-to'g'ri ko'rib bo'lmaydi</div>
-      <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:8px">
-        <a href="${url}" download="${name||'file'}" 
-           style="background:#3b82f6;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:500">
-          ⬇️ Yuklab olish
-        </a>
-      </div>
-    `;
-    createModal(wrap, icon + ' ' + (name||''));
-
-  } else {
-      const fullUrl = url.startsWith('http') ? url : (window.location.origin + url);
-      const viewerUrl = 'https://docs.google.com/gview?url=' + encodeURIComponent(fullUrl) + '&embedded=true';
-      const wrap = document.createElement('div');
-      wrap.style.cssText = 'width:100%;height:88vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;';
-      const spinner = document.createElement('div');
-      spinner.style.cssText = 'color:#fff;font-size:14px;';
-      spinner.textContent = 'Yuklanmoqda...';
-      const iframe = document.createElement('iframe');
-      iframe.src = viewerUrl;
-      iframe.style.cssText = 'width:100%;height:88vh;border:none;border-radius:8px;background:#fff;display:none;';
-      iframe.onload = () => { spinner.style.display = 'none'; iframe.style.display = 'block'; };
-      wrap.appendChild(spinner); wrap.appendChild(iframe);
-      createModal(wrap, '📄 ' + (name||''));
-    }
-
-  } else {
-    const a = document.createElement('a');
-    a.href = url; a.download = name || 'file'; a.click();
-  }
-}
-
 function renderDetailFiles(files) {
   const el = document.getElementById('dpFiles');
   if (!files.length) { el.innerHTML = '<p style="font-size:13px;color:var(--sub);margin-bottom:8px">Fayllar yo\'q</p>'; return; }
@@ -1482,7 +1246,7 @@ function renderDetailFiles(files) {
     <div class="file-item">
       <span class="file-icon">${fileIcon(f.type)}</span>
       <span class="file-name">${clean(f.name)}</span>
-      <a href="${f.url}" class="file-link" onclick="openFile(event,'${f.url}','${clean(f.name)}','${f.type||''}','${f.id}')">Ko'rish</a>
+      <a href="${f.url}" class="file-link" target="_blank">Ko'rish</a>
       <button class="file-del" onclick="deleteFile('${f.id}')">🗑️</button>
     </div>`).join('');
 }
@@ -1687,26 +1451,20 @@ async function addSharedChild(shareId, taskId) {
 // ══════════════════════════════════════════
 function renderArch() {
   const C = document.getElementById('taskPanelContent');
-  if (!arch || !arch.length) { C.innerHTML = "<div class=\'empty\'><div class=\'empty-ic\'>📦</div><p>Arxivda topshiriqlar yo\'q</p></div>"; return; }
+  if (!arch.length) { C.innerHTML = "<div class='empty'><div class='empty-ic'>📦</div><p>Arxivda topshiriqlar yo\'q</p></div>"; return; }
 
   let html = `<div style="margin-bottom:16px"><h2 style="font-size:18px;font-weight:700;margin-bottom:12px">📦 Arxiv (${arch.length} ta)</h2>`;
   arch.forEach((a, idx) => {
-    const archId = String(a.id); // Bu DOIM arxiv yozuvining IDsi — String
+    const archId = a.id; // Bu DOIM arxiv yozuvining IDsi
     const taskText = a.taskText || a.text || '(nomsiz)';
-    const taskData = a.taskData || {};
-    const children = taskData.children || a.children || [];
-    const childCount = a.childCount != null ? a.childCount : cntDeep({children});
-    const priority = taskData.priority || '';
-    const status = taskData.status || '';
-    const deadline = taskData.deadline ? `⏰ ${new Date(taskData.deadline).toLocaleDateString('uz-UZ')} · ` : '';
-    const priorityBadge = priority === 'high' ? '<span style="color:#e74c3c;font-size:11px">🔴 Yuqori</span>' : priority === 'low' ? '<span style="color:#27ae60;font-size:11px">🟢 Past</span>' : '';
+    const children = (a.taskData && a.taskData.children) || a.children || [];
+    const childCount = a.childCount || cntDeep({children});
     html += `
       <div class="arch-card" id="ac_${archId}">
         <div class="arch-top">
           <div style="flex:1">
             <div class="arch-name">${clean(taskText)}</div>
-            <div class="arch-meta">📋 ${clean(a.fromList||'')} · 🕐 ${a.archivedAt ? new Date(a.archivedAt).toLocaleString('uz-UZ') : '—'}</div>
-            ${deadline || priorityBadge ? `<div style="font-size:11px;color:var(--sub);margin-top:3px">${deadline}${priorityBadge}</div>` : ''}
+            <div class="arch-meta">📋 ${clean(a.fromList||'')} · 🕐 ${new Date(a.archivedAt).toLocaleString('uz-UZ')}</div>
             ${childCount ? `<div style="font-size:11px;color:var(--sub);margin-top:3px">📂 ${childCount} ta quyi topshiriq</div>` : ''}
           </div>
           <div class="arch-btns">
@@ -1715,7 +1473,7 @@ function renderArch() {
             <button class="ibtn c-no"  id="dab_${archId}" onclick="delArch('${archId}')">🗑️ O\'chirish</button>
           </div>
         </div>
-        <div class="arch-tree" id="at_${archId}">${buildArchTree(taskData || a)}</div>
+        <div class="arch-tree" id="at_${archId}">${buildArchTree(a.taskData || a)}</div>
       </div>`;
   });
   html += '</div>';
@@ -1746,8 +1504,8 @@ async function unarch(archId) {
   try {
     const result = await api('POST', `/api/archive/${archId}/unarchive`);
     console.log('[DEBUG] unarchive result:', result);
-    arch = arch.filter(a => String(a.id) !== String(archId));
-    [lists, shared, arch] = await Promise.all([api('GET', '/api/lists'), api('GET', '/api/shared-to-me'), api('GET', '/api/archive')]);
+    arch = arch.filter(a => a.id !== archId);
+    lists = await api('GET', '/api/lists');
     calcStats(); renderSidebar();
     notify('Qaytarildi ✅');
     renderArch();
@@ -1765,7 +1523,7 @@ async function delArch(archId) {
   load(true);
   try {
     await api('DELETE', `/api/archive/${archId}`);
-    arch = arch.filter(a => String(a.id) !== String(archId));
+    arch = arch.filter(a => a.id !== archId);
     notify("O\'chirildi 🗑️");
     renderArch();
   } catch (e) {
