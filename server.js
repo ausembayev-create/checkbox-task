@@ -883,11 +883,8 @@ app.get('/api/files/:id/proxy', auth, async (req, res) => {
     }
 
     if (USE_R2 && file.filename) {
-      console.log('[PROXY] r2Get filename:', file.filename);
       const resp = await r2Get(file.filename);
-      console.log('[PROXY] r2Get status:', resp ? resp.status : 'null');
       if (!resp || !resp.ok) {
-        console.error('[PROXY] R2 failed:', resp?.status, 'filename:', file.filename);
         return res.status(502).send('R2 xatosi: ' + (resp?.status || 'no response') + ' | ' + file.filename);
       }
       const ct = file.mimetype || resp.headers.get('content-type') || 'application/octet-stream';
@@ -905,7 +902,6 @@ app.get('/api/files/:id/proxy', auth, async (req, res) => {
       res.sendFile(fp);
     }
   } catch(e) {
-    console.error('[PROXY] catch xatosi:', e.message);
     res.status(500).json({ error: 'Proxy xatosi: ' + e.message });
   }
 });
