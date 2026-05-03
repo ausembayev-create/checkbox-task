@@ -589,7 +589,7 @@ app.post('/api/lists/:lid/archive-completed', auth, (req, res) => {
       n.comments = (db.comments||[]).filter(c=>c.task_id===n.id);
       (n.children||[]).forEach(enrichNode);
     })(tree);
-    db.archive.push({ id: nid(), user_id: String(req.user.id), task_data: JSON.stringify(tree), from_list: list.title, list_id: list.id, archived_at: Date.now() });
+    db.archive.push({ id: nid(), user_id: String(req.user.id), task_data: JSON.stringify(tree), from_list: list.title, list_id: list.id, parent_id: task.parent_id || null, archived_at: Date.now() });
     deleteTaskDeep(task.id, db);
   });
   saveDB(db); res.json({ ok: true, count: done.length });
@@ -598,19 +598,37 @@ app.post('/api/lists/:lid/archive-completed', auth, (req, res) => {
 app.get('/api/archive', auth, (req, res) => {
   const db = loadDB();
   const uid = String(req.user.id);
+  // user_id yo'q (eski yozuv) — list egasini tekshirib ko'rsatamiz
   const myArchive = db.archive.filter(a => {
-    // user_id yo'q (eski yozuv) yoki mos kelsa ko'rsatamiz
-    return !a.user_id || String(a.user_id) === uid;
+    if (String(a.user_id) === uid) return true;
+    if (!a.user_id || a.user_id === 'undefined' || a.user_id === 'null') {
+      // Eski yozuv: list egasimi?
+      if (a.list_id) {
+        const list = db.lists.find(l => l.id === a.list_id);
+        if (list && String(list.user_id) === uid) { a.user_id = uid; return true; }
+      }
+      // from_list orqali topish
+      const list = db.lists.find(l => l.title === a.from_list && String(l.user_id) === uid);
+      if (list) { a.user_id = uid; return true; }
+      return false;
+    }
+    return false;
   });
+  // user_id tuzatilgan bo'lsa saqlab qo'yamiz
+  const needsSave = myArchive.some(a => !a._savedUserId);
+  if (needsSave) saveDB(db);
+
   res.json(myArchive.sort((a, b) => b.archived_at - a.archived_at).map(r => {
-    const td = JSON.parse(r.task_data);
+    let td;
+    try { td = JSON.parse(r.task_data); } catch(e) { td = { text: r.from_list || 'Topshiriq', children: [] }; }
     return {
-      id: r.id,          // ARXIV yozuvining IDsi (task.id EMAS)
-      taskText: td.text, // task matni
+      id: String(r.id),  // ARXIV yozuvining IDsi (task.id EMAS) — har doim String
+      taskText: td.text || '(nomsiz)',
       taskData: td,      // to'liq task (children bilan)
-      fromList: r.from_list,
-      listId: r.list_id,
-      archivedAt: r.archived_at,
+      fromList: r.from_list || '',
+      listId: r.list_id || '',
+      parentId: r.parent_id || null,
+      archivedAt: r.archived_at || 0,
       childCount: (td.children||[]).length ? td.children.reduce(function cnt(s,c){return s+1+(c.children||[]).reduce(cnt,0);},0) : 0
     };
   }));
@@ -622,11 +640,20 @@ app.post('/api/archive/:id/unarchive', auth, (req, res) => {
   const idx = db.archive.findIndex(a => String(a.id) === String(req.params.id));
   if (idx === -1) {
     console.log('[UNARCHIVE] topilmadi. Soralgan ID:', req.params.id, '| Mavjud IDlar:', db.archive.map(a=>a.id));
-    return res.status(404).json({ error: 'Topilmadi (ID: ' + req.params.id + ')' });
+    return res.status(404).json({ error: 'Arxiv yozuvi topilmadi (ID: ' + req.params.id + ')' });
   }
   const row = db.archive[idx];
+  const uid = String(req.user.id);
+  // Egasi tekshirish — user_id yo'q eski yozuvlarga ham ruxsat
+  if (row.user_id && row.user_id !== 'undefined' && row.user_id !== 'null' && String(row.user_id) !== uid) {
+    // list orqali tekshirib ko'ramiz
+    const list = db.lists.find(l => l.id === row.list_id);
+    if (!list || String(list.user_id) !== uid) {
+      return res.status(403).json({ error: "Bu arxiv yozuvi sizga tegishli emas" });
+    }
+  }
   let td;
-  try { td = JSON.parse(row.task_data); } catch(e) { return res.status(500).json({ error: 'task_data parse xatosi' }); }
+  try { td = JSON.parse(row.task_data); } catch(e) { td = { text: row.from_list || 'Topshiriq', children: [] }; }
 
   // Ro'yxatni topamiz
   let list = db.lists.find(l => l.id === row.list_id && l.user_id === req.user.id)
@@ -707,6 +734,14 @@ app.delete('/api/archive/:id', auth, (req, res) => {
   if (idx === -1) {
     console.log('[DELETE ARCHIVE] topilmadi. Soralgan ID:', req.params.id, '| Mavjud IDlar:', db.archive.map(a=>a.id));
     return res.status(404).json({ error: 'Topilmadi (ID: ' + req.params.id + ')' });
+  }
+  const row = db.archive[idx];
+  const uid = String(req.user.id);
+  if (row.user_id && row.user_id !== 'undefined' && row.user_id !== 'null' && String(row.user_id) !== uid) {
+    const list = db.lists.find(l => l.id === row.list_id);
+    if (!list || String(list.user_id) !== uid) {
+      return res.status(403).json({ error: "Bu arxiv yozuvi sizga tegishli emas" });
+    }
   }
   db.archive.splice(idx, 1);
   saveDB(db);

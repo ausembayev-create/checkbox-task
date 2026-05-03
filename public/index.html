@@ -1539,20 +1539,26 @@ async function addSharedChild(shareId, taskId) {
 // ══════════════════════════════════════════
 function renderArch() {
   const C = document.getElementById('taskPanelContent');
-  if (!arch.length) { C.innerHTML = "<div class='empty'><div class='empty-ic'>📦</div><p>Arxivda topshiriqlar yo\'q</p></div>"; return; }
+  if (!arch || !arch.length) { C.innerHTML = "<div class=\'empty\'><div class=\'empty-ic\'>📦</div><p>Arxivda topshiriqlar yo\'q</p></div>"; return; }
 
   let html = `<div style="margin-bottom:16px"><h2 style="font-size:18px;font-weight:700;margin-bottom:12px">📦 Arxiv (${arch.length} ta)</h2>`;
   arch.forEach((a, idx) => {
-    const archId = a.id; // Bu DOIM arxiv yozuvining IDsi
+    const archId = String(a.id); // Bu DOIM arxiv yozuvining IDsi — String
     const taskText = a.taskText || a.text || '(nomsiz)';
-    const children = (a.taskData && a.taskData.children) || a.children || [];
-    const childCount = a.childCount || cntDeep({children});
+    const taskData = a.taskData || {};
+    const children = taskData.children || a.children || [];
+    const childCount = a.childCount != null ? a.childCount : cntDeep({children});
+    const priority = taskData.priority || '';
+    const status = taskData.status || '';
+    const deadline = taskData.deadline ? `⏰ ${new Date(taskData.deadline).toLocaleDateString('uz-UZ')} · ` : '';
+    const priorityBadge = priority === 'high' ? '<span style="color:#e74c3c;font-size:11px">🔴 Yuqori</span>' : priority === 'low' ? '<span style="color:#27ae60;font-size:11px">🟢 Past</span>' : '';
     html += `
       <div class="arch-card" id="ac_${archId}">
         <div class="arch-top">
           <div style="flex:1">
             <div class="arch-name">${clean(taskText)}</div>
-            <div class="arch-meta">📋 ${clean(a.fromList||'')} · 🕐 ${new Date(a.archivedAt).toLocaleString('uz-UZ')}</div>
+            <div class="arch-meta">📋 ${clean(a.fromList||'')} · 🕐 ${a.archivedAt ? new Date(a.archivedAt).toLocaleString('uz-UZ') : '—'}</div>
+            ${deadline || priorityBadge ? `<div style="font-size:11px;color:var(--sub);margin-top:3px">${deadline}${priorityBadge}</div>` : ''}
             ${childCount ? `<div style="font-size:11px;color:var(--sub);margin-top:3px">📂 ${childCount} ta quyi topshiriq</div>` : ''}
           </div>
           <div class="arch-btns">
@@ -1561,7 +1567,7 @@ function renderArch() {
             <button class="ibtn c-no"  id="dab_${archId}" onclick="delArch('${archId}')">🗑️ O\'chirish</button>
           </div>
         </div>
-        <div class="arch-tree" id="at_${archId}">${buildArchTree(a.taskData || a)}</div>
+        <div class="arch-tree" id="at_${archId}">${buildArchTree(taskData || a)}</div>
       </div>`;
   });
   html += '</div>';
@@ -1592,8 +1598,8 @@ async function unarch(archId) {
   try {
     const result = await api('POST', `/api/archive/${archId}/unarchive`);
     console.log('[DEBUG] unarchive result:', result);
-    arch = arch.filter(a => a.id !== archId);
-    lists = await api('GET', '/api/lists');
+    arch = arch.filter(a => String(a.id) !== String(archId));
+    [lists, shared, arch] = await Promise.all([api('GET', '/api/lists'), api('GET', '/api/shared-to-me'), api('GET', '/api/archive')]);
     calcStats(); renderSidebar();
     notify('Qaytarildi ✅');
     renderArch();
@@ -1611,7 +1617,7 @@ async function delArch(archId) {
   load(true);
   try {
     await api('DELETE', `/api/archive/${archId}`);
-    arch = arch.filter(a => a.id !== archId);
+    arch = arch.filter(a => String(a.id) !== String(archId));
     notify("O\'chirildi 🗑️");
     renderArch();
   } catch (e) {
