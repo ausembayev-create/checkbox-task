@@ -821,13 +821,14 @@ app.get('/api/files/:id/proxy', auth, async (req, res) => {
     if (!perm) return res.status(403).json({ error: "Ruxsat yo'q" });
   }
   try {
-    // R2 URL ni aniqlash: saqlangan url, yoki endpoint+bucket+filename dan reconstruct
+    // R2 URL ni aniqlash — ikki usul bilan urinib ko'ramiz
     let r2Url = null;
     if (USE_R2) {
-      if (file.url && file.url.startsWith('http')) {
+      if (file.url && file.url.startsWith('http') && !file.url.includes('undefined') && !file.url.includes('null')) {
         r2Url = file.url;
-      } else if (file.filename) {
-        // URL yo'q yoki noto'g'ri — R2_ENDPOINT dan reconstruct
+      }
+      // url ishonchsiz yoki yo'q bo'lsa — filename dan reconstruct
+      if (!r2Url && file.filename) {
         const endpoint = R2_ENDPOINT.replace(/\/+$/, '');
         const safe = file.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
         r2Url = `${endpoint}/${R2_BUCKET}/${safe}`;
@@ -835,11 +836,28 @@ app.get('/api/files/:id/proxy', auth, async (req, res) => {
     }
 
     if (r2Url) {
-      console.log('[PROXY] R2 URL:', r2Url);
+      console.log('[PROXY] fetching:', r2Url.substring(0, 80));
       const resp = await fetch(r2Url);
+      // Agar stored url ishlamasa, filename dan reconstruct qilib qayta urinib ko'ramiz
+      if (!resp.ok && file.url && file.url !== r2Url && file.filename) {
+        const endpoint = R2_ENDPOINT.replace(/\/+$/, '');
+        const safe = file.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const r2Url2 = `${endpoint}/${R2_BUCKET}/${safe}`;
+        console.log('[PROXY] retry with reconstructed URL:', r2Url2.substring(0, 80));
+        const resp2 = await fetch(r2Url2);
+        if (!resp2.ok) {
+          console.error('[PROXY] both URLs failed:', resp.status, resp2.status);
+          return res.status(502).send('R2 xatosi: ' + resp2.status);
+        }
+        const ct2 = file.mimetype || resp2.headers.get('content-type') || 'application/octet-stream';
+        res.setHeader('Content-Type', ct2);
+        res.setHeader('Content-Disposition', 'inline; filename="' + encodeURIComponent(file.name || 'file') + '"');
+        res.setHeader('Cache-Control', 'private, max-age=3600');
+        return res.send(Buffer.from(await resp2.arrayBuffer()));
+      }
       if (!resp.ok) {
         console.error('[PROXY] R2 xatosi:', resp.status, r2Url);
-        return res.status(502).send('R2 xatosi: ' + resp.status + ' | URL: ' + r2Url);
+        return res.status(502).send('R2 xatosi: ' + resp.status);
       }
       const ct = file.mimetype || resp.headers.get('content-type') || 'application/octet-stream';
       res.setHeader('Content-Type', ct);
