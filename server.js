@@ -882,21 +882,21 @@ app.get('/api/files/:id/proxy', auth, async (req, res) => {
       }
     }
 
+    console.log('[PROXY] file.id:', file.id, '| file.filename:', file.filename, '| file.url:', (file.url||'').substring(0,60), '| USE_R2:', USE_R2, '| r2Url:', (r2Url||'').substring(0,80));
+
     if (r2Url) {
-      console.log('[PROXY] fetching:', r2Url.substring(0, 80));
       // Signed GET request — R2 private bucket uchun
       const resp = await r2Get(file.filename || r2Url.split('/').pop());
-      // Agar signed ishlamasa, stored url bilan oddiy fetch
-      const finalResp = (resp && resp.ok) ? resp : (r2Url !== (R2_ENDPOINT.replace(/\/+$/,'')+'/'+R2_BUCKET+'/'+(file.filename||'').replace(/[^a-zA-Z0-9._-]/g,'_')) ? await fetch(r2Url) : null);
-      if (!finalResp || !finalResp.ok) {
-        console.error('[PROXY] R2 xatosi:', finalResp?.status, r2Url);
-        return res.status(502).send('R2 xatosi: ' + (finalResp?.status || 'no response'));
+      console.log('[PROXY] r2Get status:', resp ? resp.status : 'null');
+      if (!resp || !resp.ok) {
+        console.error('[PROXY] R2 xatosi:', resp?.status, '| filename:', file.filename);
+        return res.status(502).send('R2 xatosi: ' + (resp?.status || 'no response') + ' | filename: ' + file.filename);
       }
-      const ct = file.mimetype || finalResp.headers.get('content-type') || 'application/octet-stream';
+      const ct = file.mimetype || resp.headers.get('content-type') || 'application/octet-stream';
       res.setHeader('Content-Type', ct);
       res.setHeader('Content-Disposition', 'inline; filename="' + encodeURIComponent(file.name || 'file') + '"');
       res.setHeader('Cache-Control', 'private, max-age=3600');
-      const buf = Buffer.from(await finalResp.arrayBuffer());
+      const buf = Buffer.from(await resp.arrayBuffer());
       res.send(buf);
     } else {
       // Local fayl
