@@ -72,6 +72,42 @@ ${crypto.createHash('sha256').update(cr).digest('hex')}`;
   return `${R2_PUBLIC_URL}/${safe}`;
 }
 
+async function r2Get(filename) {
+  if (!filename || !USE_R2) return null;
+  const endpoint = R2_ENDPOINT.replace(/\/+$/, '');
+  const safe = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const url = `${endpoint}/${R2_BUCKET}/${safe}`;
+  const host = new URL(url).host;
+
+  const now = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  const amzDate = `${now.getUTCFullYear()}${pad(now.getUTCMonth()+1)}${pad(now.getUTCDate())}T${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}Z`;
+  const dateStamp = amzDate.slice(0,8);
+  const emptyHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+
+  const ch = `host:${host}\nx-amz-content-sha256:${emptyHash}\nx-amz-date:${amzDate}\n`;
+  const sh = 'host;x-amz-content-sha256;x-amz-date';
+  const cr = `GET\n/${R2_BUCKET}/${safe}\n\n${ch}\n${sh}\n${emptyHash}`;
+
+  const scope = `${dateStamp}/auto/s3/aws4_request`;
+  const sts = `AWS4-HMAC-SHA256\n${amzDate}\n${scope}\n${crypto.createHash('sha256').update(cr).digest('hex')}`;
+
+  const H = (k, d) => crypto.createHmac('sha256', k).update(d).digest();
+  const sk = H(H(H(H(Buffer.from('AWS4' + R2_SECRET_KEY), dateStamp), 'auto'), 's3'), 'aws4_request');
+  const sig = crypto.createHmac('sha256', sk).update(sts).digest('hex');
+  const auth = `AWS4-HMAC-SHA256 Credential=${R2_ACCESS_KEY}/${scope}, SignedHeaders=${sh}, Signature=${sig}`;
+
+  return fetch(url, {
+    method: 'GET',
+    headers: {
+      'Authorization': auth,
+      'x-amz-content-sha256': emptyHash,
+      'x-amz-date': amzDate,
+    }
+  });
+}
+
+
 async function r2Delete(filename) {
   if (!filename || !USE_R2) return;
   try {
@@ -586,9 +622,10 @@ app.post('/api/lists/:lid/archive-completed', auth, (req, res) => {
     // Files va comments saqlash
     (function enrichNode(n){
       n.files = (db.files||[]).filter(f=>f.ref_id===n.id).map(f=>({
-        id:f.id, name:f.name, filename:f.filename,
-        url: f.url || ('/uploads/'+f.filename),
-        type:f.mimetype, size:f.size, uploaded_by:f.uploaded_by
+        original_id: f.id,
+        id: f.id, name: f.name, filename: f.filename,
+        url: (f.url && f.url.startsWith('http')) ? f.url : ('/uploads/'+f.filename),
+        type: f.mimetype, size: f.size, uploaded_by: f.uploaded_by
       }));
       n.comments = (db.comments||[]).filter(c=>c.task_id===n.id);
       (n.children||[]).forEach(enrichNode);
@@ -847,33 +884,19 @@ app.get('/api/files/:id/proxy', auth, async (req, res) => {
 
     if (r2Url) {
       console.log('[PROXY] fetching:', r2Url.substring(0, 80));
-      const resp = await fetch(r2Url);
-      // Agar stored url ishlamasa, filename dan reconstruct qilib qayta urinib ko'ramiz
-      if (!resp.ok && file.url && file.url !== r2Url && file.filename) {
-        const endpoint = R2_ENDPOINT.replace(/\/+$/, '');
-        const safe = file.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-        const r2Url2 = `${endpoint}/${R2_BUCKET}/${safe}`;
-        console.log('[PROXY] retry with reconstructed URL:', r2Url2.substring(0, 80));
-        const resp2 = await fetch(r2Url2);
-        if (!resp2.ok) {
-          console.error('[PROXY] both URLs failed:', resp.status, resp2.status);
-          return res.status(502).send('R2 xatosi: ' + resp2.status);
-        }
-        const ct2 = file.mimetype || resp2.headers.get('content-type') || 'application/octet-stream';
-        res.setHeader('Content-Type', ct2);
-        res.setHeader('Content-Disposition', 'inline; filename="' + encodeURIComponent(file.name || 'file') + '"');
-        res.setHeader('Cache-Control', 'private, max-age=3600');
-        return res.send(Buffer.from(await resp2.arrayBuffer()));
+      // Signed GET request — R2 private bucket uchun
+      const resp = await r2Get(file.filename || r2Url.split('/').pop());
+      // Agar signed ishlamasa, stored url bilan oddiy fetch
+      const finalResp = (resp && resp.ok) ? resp : (r2Url !== (R2_ENDPOINT.replace(/\/+$/,'')+'/'+R2_BUCKET+'/'+(file.filename||'').replace(/[^a-zA-Z0-9._-]/g,'_')) ? await fetch(r2Url) : null);
+      if (!finalResp || !finalResp.ok) {
+        console.error('[PROXY] R2 xatosi:', finalResp?.status, r2Url);
+        return res.status(502).send('R2 xatosi: ' + (finalResp?.status || 'no response'));
       }
-      if (!resp.ok) {
-        console.error('[PROXY] R2 xatosi:', resp.status, r2Url);
-        return res.status(502).send('R2 xatosi: ' + resp.status);
-      }
-      const ct = file.mimetype || resp.headers.get('content-type') || 'application/octet-stream';
+      const ct = file.mimetype || finalResp.headers.get('content-type') || 'application/octet-stream';
       res.setHeader('Content-Type', ct);
       res.setHeader('Content-Disposition', 'inline; filename="' + encodeURIComponent(file.name || 'file') + '"');
       res.setHeader('Cache-Control', 'private, max-age=3600');
-      const buf = Buffer.from(await resp.arrayBuffer());
+      const buf = Buffer.from(await finalResp.arrayBuffer());
       res.send(buf);
     } else {
       // Local fayl
@@ -912,8 +935,8 @@ app.get('/api/files/:id/content', auth, async (req, res) => {
         r2Url = `${endpoint}/${R2_BUCKET}/${safe}`;
       }
       if (r2Url) {
-        const resp = await fetch(r2Url);
-        if (!resp.ok) return res.status(502).json({ error: 'R2 xatosi: ' + resp.status });
+        const resp = await r2Get(file.filename || r2Url.split('/').pop());
+        if (!resp || !resp.ok) return res.status(502).json({ error: 'R2 xatosi: ' + (resp?.status || 'no response') });
         text = await resp.text();
       }
     }
