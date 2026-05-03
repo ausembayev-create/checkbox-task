@@ -882,22 +882,19 @@ app.get('/api/files/:id/proxy', auth, async (req, res) => {
       }
     }
 
-    console.log('[PROXY] file.id:', file.id, '| file.filename:', file.filename, '| file.url:', (file.url||'').substring(0,60), '| USE_R2:', USE_R2, '| r2Url:', (r2Url||'').substring(0,80));
-
-    if (r2Url) {
-      // Signed GET request — R2 private bucket uchun
-      const resp = await r2Get(file.filename || r2Url.split('/').pop());
+    if (USE_R2 && file.filename) {
+      console.log('[PROXY] r2Get filename:', file.filename);
+      const resp = await r2Get(file.filename);
       console.log('[PROXY] r2Get status:', resp ? resp.status : 'null');
       if (!resp || !resp.ok) {
-        console.error('[PROXY] R2 xatosi:', resp?.status, '| filename:', file.filename);
-        return res.status(502).send('R2 xatosi: ' + (resp?.status || 'no response') + ' | filename: ' + file.filename);
+        console.error('[PROXY] R2 failed:', resp?.status, 'filename:', file.filename);
+        return res.status(502).send('R2 xatosi: ' + (resp?.status || 'no response') + ' | ' + file.filename);
       }
       const ct = file.mimetype || resp.headers.get('content-type') || 'application/octet-stream';
       res.setHeader('Content-Type', ct);
       res.setHeader('Content-Disposition', 'inline; filename="' + encodeURIComponent(file.name || 'file') + '"');
       res.setHeader('Cache-Control', 'private, max-age=3600');
-      const buf = Buffer.from(await resp.arrayBuffer());
-      res.send(buf);
+      return res.send(Buffer.from(await resp.arrayBuffer()));
     } else {
       // Local fayl
       const fname = file.filename || path.basename((file.url || '').replace(/^\/uploads\//, ''));
@@ -925,20 +922,10 @@ app.get('/api/files/:id/content', auth, async (req, res) => {
   }
   try {
     let text;
-    if (USE_R2) {
-      let r2Url = null;
-      if (file.url && file.url.startsWith('http')) {
-        r2Url = file.url;
-      } else if (file.filename) {
-        const endpoint = R2_ENDPOINT.replace(/\/+$/, '');
-        const safe = file.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-        r2Url = `${endpoint}/${R2_BUCKET}/${safe}`;
-      }
-      if (r2Url) {
-        const resp = await r2Get(file.filename || r2Url.split('/').pop());
-        if (!resp || !resp.ok) return res.status(502).json({ error: 'R2 xatosi: ' + (resp?.status || 'no response') });
-        text = await resp.text();
-      }
+    if (USE_R2 && file.filename) {
+      const resp = await r2Get(file.filename);
+      if (!resp || !resp.ok) return res.status(502).json({ error: 'R2 xatosi: ' + (resp?.status || 'no response') });
+      text = await resp.text();
     }
     if (text === undefined) {
       // Local fayldan o'qish
