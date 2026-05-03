@@ -1296,7 +1296,7 @@ function closeDetail() {
   document.getElementById('detailPanel').classList.add('hidden');
 }
 
-function openFile(e, url, name, mime, fileId) {
+async function openFile(e, url, name, mime, fileId) {
   e.preventDefault();
   if (!url) return;
 
