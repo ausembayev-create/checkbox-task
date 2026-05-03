@@ -1437,8 +1437,9 @@ async function openFile(e, url, name, mime, fileId) {
     pre.style.cssText = 'background:#1e1e1e;color:#d4d4d4;padding:20px;border-radius:8px;font-size:13px;line-height:1.6;width:100%;box-sizing:border-box;white-space:pre-wrap;word-break:break-all;margin:0;';
     pre.textContent = 'Yuklanmoqda...';
     createModal(pre);
-    const fetchUrl = contentUrl || url;
-    fetch(fetchUrl, contentUrl ? { headers: { 'x-token': token } } : {})
+    const fetchUrl = proxyUrl || contentUrl || url;
+    const fetchOpts = (proxyUrl || contentUrl) ? { headers: { 'x-token': token } } : {};
+    fetch(fetchUrl, fetchOpts)
       .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
       .then(t => { pre.textContent = t || '(fayl bosh)'; })
       .catch(err => { pre.textContent = 'Oqib bolmadi: ' + err.message; });
