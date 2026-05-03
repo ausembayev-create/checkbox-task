@@ -811,6 +811,39 @@ app.delete('/api/files/:id', auth, (req, res) => {
   db.files.splice(fileIdx, 1); saveDB(db); res.json({ ok: true });
 });
 
+// ── FAYL PROXY — barcha fayl turlari uchun (R2 public access shart emas) ──
+app.get('/api/files/:id/proxy', auth, async (req, res) => {
+  const db = loadDB();
+  const file = (db.files || []).find(f => f.id === req.params.id);
+  if (!file) return res.status(404).json({ error: 'Topilmadi' });
+  if (file.ref_id) {
+    const perm = getTaskPermission(file.ref_id, req.user.id, req.user.username, db);
+    if (!perm) return res.status(403).json({ error: "Ruxsat yo'q" });
+  }
+  try {
+    if (USE_R2 && file.url && file.url.startsWith('http')) {
+      // R2 dan server orqali uzatish
+      const resp = await fetch(file.url);
+      if (!resp.ok) return res.status(502).send('R2 xatosi: ' + resp.status);
+      const ct = file.mimetype || resp.headers.get('content-type') || 'application/octet-stream';
+      res.setHeader('Content-Type', ct);
+      res.setHeader('Content-Disposition', 'inline; filename="' + encodeURIComponent(file.name || 'file') + '"');
+      res.setHeader('Cache-Control', 'private, max-age=3600');
+      const buf = Buffer.from(await resp.arrayBuffer());
+      res.send(buf);
+    } else {
+      // Local fayl
+      const fp = path.join(UPLOADS_DIR, file.filename || path.basename(file.url || ''));
+      if (!fs.existsSync(fp)) return res.status(404).send('Fayl topilmadi');
+      res.setHeader('Content-Disposition', 'inline; filename="' + encodeURIComponent(file.name || 'file') + '"');
+      res.setHeader('Cache-Control', 'private, max-age=3600');
+      res.sendFile(fp);
+    }
+  } catch(e) {
+    res.status(500).json({ error: 'Proxy xatosi: ' + e.message });
+  }
+});
+
 // ── FAYL MATNINI O'QISH (TXT, CSV, JSON) — R2 CORS muammosini hal qiladi ──
 app.get('/api/files/:id/content', auth, async (req, res) => {
   const db = loadDB();

@@ -1299,20 +1299,24 @@ function closeDetail() {
 function openFile(e, url, name, mime, fileId) {
   e.preventDefault();
   if (!url) return;
-  const ext = url.split('.').pop().toLowerCase().split('?')[0];
+
+  // Agar fileId bo'lsa — server proxy URL ishlatamiz (R2 public access shart emas)
+  const token = localStorage.getItem('cbtoken') || '';
+  const proxyUrl = fileId ? `/api/files/${fileId}/proxy` : null;
+  const contentUrl = fileId ? `/api/files/${fileId}/content` : null;
+
+  const ext = (url.split('.').pop() || '').toLowerCase().split('?')[0];
   const mimeStr = (mime || '').toLowerCase();
 
-  const isImage = ['jpg','jpeg','png','gif','webp','svg'].includes(ext) || mimeStr.startsWith('image/');
-  const isVideo = ['mp4','webm','mov','avi'].includes(ext) || mimeStr.startsWith('video/');
-  const isPDF   = ext === 'pdf' || mimeStr.includes('pdf');
-  const isTxt   = ['txt','csv','json'].includes(ext) || mimeStr.startsWith('text/');
+  const isImage  = ['jpg','jpeg','png','gif','webp','svg'].includes(ext) || mimeStr.startsWith('image/');
+  const isVideo  = ['mp4','webm','mov','avi'].includes(ext) || mimeStr.startsWith('video/');
+  const isPDF    = ext === 'pdf' || mimeStr.includes('pdf');
+  const isTxt    = ['txt','csv','json'].includes(ext) || mimeStr.startsWith('text/');
   const isOffice = ['doc','docx','xls','xlsx','ppt','pptx'].includes(ext)
     || mimeStr.includes('word') || mimeStr.includes('sheet') || mimeStr.includes('presentation')
     || mimeStr.includes('powerpoint') || mimeStr.includes('excel');
 
-  // Viewer modal yaratish
   function createModal(contentEl, titleText) {
-    // Eski modalni o'chirish
     const old = document.getElementById('fileViewerModal');
     if (old) document.body.removeChild(old);
 
@@ -1320,7 +1324,6 @@ function openFile(e, url, name, mime, fileId) {
     modal.id = 'fileViewerModal';
     modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;';
 
-    // Header
     const hdr = document.createElement('div');
     hdr.style.cssText = 'width:100%;max-width:1100px;display:flex;align-items:center;padding:12px 16px;gap:10px;flex-shrink:0;';
     const title = document.createElement('span');
@@ -1336,7 +1339,6 @@ function openFile(e, url, name, mime, fileId) {
     closeBtn.onclick = () => document.body.removeChild(modal);
     hdr.appendChild(title); hdr.appendChild(dlBtn); hdr.appendChild(closeBtn);
 
-    // Content wrapper
     const body = document.createElement('div');
     body.style.cssText = 'flex:1;width:100%;max-width:1100px;overflow:auto;display:flex;align-items:center;justify-content:center;padding:8px 16px 20px;box-sizing:border-box;';
     body.appendChild(contentEl);
@@ -1344,48 +1346,90 @@ function openFile(e, url, name, mime, fileId) {
     modal.appendChild(hdr);
     modal.appendChild(body);
 
-    // ESC tugmasini bosish
     const onKey = (ev) => { if (ev.key === 'Escape') { document.body.removeChild(modal); document.removeEventListener('keydown', onKey); } };
     document.addEventListener('keydown', onKey);
-    // Orqa fonga bosish — content ga tegmasa yopiladi
     modal.addEventListener('click', (ev) => { if (ev.target === modal) { document.body.removeChild(modal); document.removeEventListener('keydown', onKey); } });
-
     document.body.appendChild(modal);
   }
 
+  // Proxy orqali blob URL yaratish (rasm va video uchun)
+  async function loadViaProxy(renderFn) {
+    const loadingEl = document.createElement('div');
+    loadingEl.style.cssText = 'color:#fff;font-size:14px;';
+    loadingEl.textContent = 'Yuklanmoqda...';
+    createModal(loadingEl);
+    try {
+      const resp = await fetch(proxyUrl, { headers: { 'x-token': token } });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const blob = await resp.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const modal = document.getElementById('fileViewerModal');
+      if (!modal) return;
+      const body = modal.querySelector('div:last-child');
+      if (body) { body.innerHTML = ''; body.appendChild(renderFn(blobUrl)); }
+    } catch(err) {
+      const modal = document.getElementById('fileViewerModal');
+      if (modal) { const body = modal.querySelector('div:last-child'); if (body) body.innerHTML = '<p style="color:#f87171">Faylni yuklab bo\'lmadi: ' + err.message + '</p>'; }
+    }
+  }
+
   if (isImage) {
-    const img = document.createElement('img');
-    img.src = url;
-    img.style.cssText = 'max-width:100%;max-height:88vh;border-radius:8px;object-fit:contain;box-shadow:0 4px 32px rgba(0,0,0,.5);';
-    createModal(img);
+    if (proxyUrl) {
+      loadViaProxy(blobUrl => {
+        const img = document.createElement('img');
+        img.src = blobUrl;
+        img.style.cssText = 'max-width:100%;max-height:88vh;border-radius:8px;object-fit:contain;box-shadow:0 4px 32px rgba(0,0,0,.5);';
+        return img;
+      });
+    } else {
+      const img = document.createElement('img');
+      img.src = url;
+      img.style.cssText = 'max-width:100%;max-height:88vh;border-radius:8px;object-fit:contain;box-shadow:0 4px 32px rgba(0,0,0,.5);';
+      createModal(img);
+    }
 
   } else if (isVideo) {
-    const vid = document.createElement('video');
-    vid.src = url; vid.controls = true; vid.autoplay = true;
-    vid.style.cssText = 'max-width:100%;max-height:88vh;border-radius:8px;box-shadow:0 4px 32px rgba(0,0,0,.5);';
-    createModal(vid);
+    if (proxyUrl) {
+      loadViaProxy(blobUrl => {
+        const vid = document.createElement('video');
+        vid.src = blobUrl; vid.controls = true; vid.autoplay = true;
+        vid.style.cssText = 'max-width:100%;max-height:88vh;border-radius:8px;box-shadow:0 4px 32px rgba(0,0,0,.5);';
+        return vid;
+      });
+    } else {
+      const vid = document.createElement('video');
+      vid.src = url; vid.controls = true; vid.autoplay = true;
+      vid.style.cssText = 'max-width:100%;max-height:88vh;border-radius:8px;';
+      createModal(vid);
+    }
 
   } else if (isPDF) {
-    const iframe = document.createElement('iframe');
-    iframe.src = url;
-    iframe.style.cssText = 'width:100%;height:88vh;border:none;border-radius:8px;background:#fff;';
-    createModal(iframe, '📕 ' + (name||'PDF'));
+    if (proxyUrl) {
+      loadViaProxy(blobUrl => {
+        const iframe = document.createElement('iframe');
+        iframe.src = blobUrl;
+        iframe.style.cssText = 'width:100%;height:88vh;border:none;border-radius:8px;background:#fff;';
+        return iframe;
+      });
+    } else {
+      const iframe = document.createElement('iframe');
+      iframe.src = url;
+      iframe.style.cssText = 'width:100%;height:88vh;border:none;border-radius:8px;background:#fff;';
+      createModal(iframe, '📕 ' + (name||'PDF'));
+    }
 
   } else if (isTxt) {
-    // Matn faylini server proxy orqali o'qiymiz (R2 CORS muammosini hal qiladi)
     const pre = document.createElement('pre');
     pre.style.cssText = 'background:#1e1e1e;color:#d4d4d4;padding:20px;border-radius:8px;font-size:13px;line-height:1.6;overflow:auto;max-height:88vh;width:100%;box-sizing:border-box;white-space:pre-wrap;word-break:break-all;';
     pre.textContent = 'Yuklanmoqda...';
     createModal(pre, '📄 ' + (name||''));
-    const txtToken = localStorage.getItem('cbtoken') || '';
-    const txtFetchUrl = fileId ? `/api/files/${fileId}/content` : url;
-    fetch(txtFetchUrl, fileId ? { headers: { 'x-token': txtToken } } : {})
+    const fetchUrl = contentUrl || url;
+    fetch(fetchUrl, contentUrl ? { headers: { 'x-token': token } } : {})
       .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
       .then(t => { pre.textContent = t || '(fayl bo\'sh)'; })
       .catch(err => { pre.textContent = 'Faylni o\'qib bo\'lmadi: ' + err.message; });
 
   } else if (isOffice) {
-    // Google Docs Viewer orqali ko'rsatamiz
     const fullUrl = url.startsWith('http') ? url : (window.location.origin + url);
     const viewerUrl = 'https://docs.google.com/gview?url=' + encodeURIComponent(fullUrl) + '&embedded=true';
     const wrap = document.createElement('div');
@@ -1401,7 +1445,6 @@ function openFile(e, url, name, mime, fileId) {
     createModal(wrap, '📄 ' + (name||''));
 
   } else {
-    // Boshqa fayl turlari — yuklab olish
     const a = document.createElement('a');
     a.href = url; a.download = name || 'file'; a.click();
   }
