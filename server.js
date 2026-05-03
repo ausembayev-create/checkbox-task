@@ -811,6 +811,36 @@ app.delete('/api/files/:id', auth, (req, res) => {
   db.files.splice(fileIdx, 1); saveDB(db); res.json({ ok: true });
 });
 
+// ── FAYL MATNINI O'QISH (TXT, CSV, JSON) — R2 CORS muammosini hal qiladi ──
+app.get('/api/files/:id/content', auth, async (req, res) => {
+  const db = loadDB();
+  const file = (db.files || []).find(f => f.id === req.params.id);
+  if (!file) return res.status(404).json({ error: 'Topilmadi' });
+  // Huquq tekshirish
+  if (file.ref_id) {
+    const perm = getTaskPermission(file.ref_id, req.user.id, req.user.username, db);
+    if (!perm) return res.status(403).json({ error: "Ruxsat yo'q" });
+  }
+  try {
+    let text;
+    if (USE_R2 && file.url && file.url.startsWith('http')) {
+      // R2 dan server orqali o'qish
+      const resp = await fetch(file.url);
+      if (!resp.ok) return res.status(502).json({ error: 'R2 dan o\'qib bo\'lmadi: ' + resp.status });
+      text = await resp.text();
+    } else {
+      // Local fayldan o'qish
+      const fp = path.join(UPLOADS_DIR, file.filename || path.basename(file.url || ''));
+      if (!fs.existsSync(fp)) return res.status(404).json({ error: 'Fayl diskda topilmadi' });
+      text = fs.readFileSync(fp, 'utf8');
+    }
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.send(text);
+  } catch(e) {
+    res.status(500).json({ error: 'Faylni o\'qishda xatolik: ' + e.message });
+  }
+});
+
 // ── SHARING ──
 app.post('/api/tasks/:tid/share', auth, (req, res) => {
   const db = loadDB(); const task = db.tasks.find(t => t.id === req.params.tid);
