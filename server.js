@@ -331,13 +331,13 @@ function listTasks(listId, db) {
     .sort((a, b) => a.completed - b.completed || b.created_at - a.created_at)
     .map(t => buildTaskTree(t.id, db));
 }
-function deleteTaskDeep(taskId, db) {
-  db.tasks.filter(t => t.parent_id === taskId).forEach(c => deleteTaskDeep(c.id, db));
+function deleteTaskDeep(taskId, db, skipR2 = false) {
+  db.tasks.filter(t => t.parent_id === taskId).forEach(c => deleteTaskDeep(c.id, db, skipR2));
   // Fayllarni diskdan va R2 dan o'chirish
   (db.files || []).filter(f => f.ref_id === taskId).forEach(f => {
-    if (USE_R2 && f.url && f.url.startsWith('http')) {
+    if (!skipR2 && USE_R2 && f.url && f.url.startsWith('http')) {
       r2Delete(f.filename).catch(() => {});
-    } else if (f.filename) {
+    } else if (!skipR2 && f.filename && !USE_R2) {
       const fp = path.join(UPLOADS_DIR, f.filename);
       try { if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch {}
     }
@@ -610,7 +610,7 @@ app.post('/api/tasks/:id/archive', auth, (req, res) => {
     parent_id: task.parent_id || null,
     archived_at: Date.now()
   });
-  deleteTaskDeep(task.id, db); saveDB(db); res.json({ ok: true });
+  deleteTaskDeep(task.id, db, true); saveDB(db); res.json({ ok: true });
 });
 app.post('/api/lists/:lid/archive-completed', auth, (req, res) => {
   const db = loadDB(); const list = db.lists.find(l => l.id === req.params.lid && l.user_id === req.user.id);
@@ -631,7 +631,7 @@ app.post('/api/lists/:lid/archive-completed', auth, (req, res) => {
       (n.children||[]).forEach(enrichNode);
     })(tree);
     db.archive.push({ id: nid(), user_id: String(req.user.id), task_data: JSON.stringify(tree), from_list: list.title, list_id: list.id, parent_id: task.parent_id || null, archived_at: Date.now() });
-    deleteTaskDeep(task.id, db);
+    deleteTaskDeep(task.id, db, true);
   });
   saveDB(db); res.json({ ok: true, count: done.length });
 });
