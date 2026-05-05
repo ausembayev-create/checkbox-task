@@ -237,7 +237,7 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => 
 app.use(cors({
   origin: (origin, cb) => {
     if (!origin) return cb(null, true); // mobile / curl
-    if (origin.endsWith('.railway.app') || origin.includes('localhost') || ALLOWED_ORIGINS.includes(origin))
+    if (origin.endsWith('.railway.app') || origin.includes('localhost') || origin.endsWith('.uz') || ALLOWED_ORIGINS.includes(origin))
       return cb(null, true);
     cb(new Error('CORS: ruxsat etilmagan'));
   },
