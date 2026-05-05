@@ -221,6 +221,7 @@ const upload = multer({
 });
 
 app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Xavfsizlik headerlari
 app.use((req, res, next) => {
@@ -504,7 +505,10 @@ app.post('/api/tasks/:pid/children', auth, (req, res) => {
   if (!perm) return res.status(404).json({ error: 'Topilmadi' });
   if (perm === 'view') return res.status(403).json({ error: "Faqat ko'rish huquqi bor" });
   const parent = db.tasks.find(t => t.id === req.params.pid);
-  const task = { id: nid(), list_id: parent.list_id, parent_id: req.params.pid, user_id: req.user.id, text: req.body.text.trim(), completed: false, priority: parent.priority || 'medium', status: 'todo', deadline: req.body.deadline || null, created_at: Date.now() };
+  if (!parent) return res.status(404).json({ error: 'Ota topshiriq topilmadi' });
+  const text = (req.body && req.body.text) ? String(req.body.text).trim() : '';
+  if (!text) return res.status(400).json({ error: 'Matn kiritilmadi' });
+  const task = { id: nid(), list_id: parent.list_id, parent_id: req.params.pid, user_id: req.user.id, text, completed: false, priority: parent.priority || 'medium', status: 'todo', deadline: (req.body && req.body.deadline) || null, created_at: Date.now() };
   db.tasks.push(task); saveDB(db); res.json(buildTaskTree(task.id, db));
 });
 app.put('/api/tasks/:id', auth, (req, res) => {
