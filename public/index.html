@@ -461,6 +461,19 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
   </div>
 </div>
 
+<!-- ADMIN PANEL MODAL -->
+<div class="ov" id="adminOv">
+  <div class="modal" style="max-width:520px;max-height:90vh;overflow-y:auto">
+    <h3>⚙️ Admin Panel <button class="m-close" onclick="closeOv('adminOv')">✕</button></h3>
+    <div style="margin-bottom:16px">
+      <h4 style="font-size:14px;font-weight:600;margin-bottom:10px;color:var(--sub)">📋 Status qiymatlarini sozlash</h4>
+      <div id="adminStatusList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px"></div>
+      <button class="ibtn c-ok" onclick="adminAddStatus()" style="width:100%;margin-bottom:8px">+ Yangi status qo'shish</button>
+      <button class="m-btn c-p" onclick="adminSaveStatuses()">💾 Saqlash</button>
+    </div>
+  </div>
+</div>
+
 <!-- EDIT LIST NAME MODAL -->
 <div class="ov" id="editListOv">
   <div class="modal">
@@ -602,7 +615,8 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
       <button class="ibtn c-p" style="width:100%" onclick="createList();closeSidebarDrawer()">+ Yaratish</button>
     </div>
     <div class="lists-nav" id="listsNavD"></div>
-    <div style="padding:16px">
+    <div style="padding:16px;display:flex;flex-direction:column;gap:8px">
+      <button id="adminPanelBtn" class="ibtn c-gray" style="width:100%;display:none" onclick="openAdmin()">⚙️ Admin Panel</button>
       <button class="ibtn c-no" style="width:100%" onclick="logout()">🚪 Chiqish</button>
     </div>
   </div>
@@ -663,6 +677,18 @@ select.psel,select.ssel{padding:3px 6px;border-radius:6px;font-size:11px;border:
 // GLOBALS
 // ══════════════════════════════════════════
 let token = localStorage.getItem('cbtoken') || null;
+let STATUSES = [
+  { value: 'backlog',  label: 'Backlog',     color: '#6c757d' },
+  { value: 'todo',     label: 'To Do',       color: '#007bff' },
+  { value: 'progress', label: 'In Progress', color: '#ffc107' },
+  { value: 'review',   label: 'Review',      color: '#17a2b8' },
+  { value: 'done',     label: 'Done',        color: '#28a745' },
+];
+function statusLabel(v) { const s = STATUSES.find(x=>x.value===v); return s ? s.label : (v||''); }
+function statusColor(v) { const s = STATUSES.find(x=>x.value===v); return s ? s.color : '#6c757d'; }
+async function loadStatuses() {
+  try { const r = await fetch('/api/statuses'); if(r.ok) STATUSES = await r.json(); } catch(e) {}
+}
 let me = JSON.parse(localStorage.getItem('cbuser') || 'null');
 let lists = [], shared = [], arch = [];
 let curTab = 'all', curListId = null, q = '';
@@ -964,6 +990,59 @@ async function authSubmit() {
 }
 document.addEventListener('keypress', ev => { if (ev.key === 'Enter' && document.getElementById('authOv').style.display !== 'none') authSubmit(); });
 
+// ── ADMIN PANEL ──
+function openAdmin() {
+  closeOv('profOv');
+  renderAdminStatuses();
+  openOv('adminOv');
+}
+
+function renderAdminStatuses() {
+  const container = document.getElementById('adminStatusList');
+  container.innerHTML = '';
+  STATUSES.forEach((s, i) => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg);border-radius:8px;border:1px solid var(--brd)';
+    row.innerHTML = `
+      <input type="color" value="${s.color}" oninput="adminUpdateStatus(${i},'color',this.value)"
+        style="width:36px;height:36px;border:none;border-radius:6px;cursor:pointer;padding:2px;background:none">
+      <input type="text" value="${s.label}" placeholder="Status nomi"
+        oninput="adminUpdateStatus(${i},'label',this.value)"
+        style="flex:1;padding:6px 10px;border:1px solid var(--brd);border-radius:6px;background:var(--bg2);color:var(--txt);font-size:13px">
+      <input type="text" value="${s.value}" placeholder="value (lotin)"
+        oninput="adminUpdateStatus(${i},'value',this.value)"
+        style="width:100px;padding:6px 10px;border:1px solid var(--brd);border-radius:6px;background:var(--bg2);color:var(--txt);font-size:12px">
+      ${STATUSES.length > 1 ? `<button onclick="adminRemoveStatus(${i})" style="background:none;border:none;color:var(--no);cursor:pointer;font-size:18px;padding:0 4px">🗑️</button>` : ''}
+    `;
+    container.appendChild(row);
+  });
+}
+
+let _adminStatuses = [];
+function adminUpdateStatus(i, key, val) {
+  STATUSES[i][key] = val;
+}
+function adminAddStatus() {
+  STATUSES.push({ value: 'status_' + Date.now(), label: 'Yangi status', color: '#6c757d' });
+  renderAdminStatuses();
+}
+function adminRemoveStatus(i) {
+  if (STATUSES.length <= 1) return notify('Kamida 1 ta status bo\'lishi kerak', 'err');
+  STATUSES.splice(i, 1);
+  renderAdminStatuses();
+}
+async function adminSaveStatuses() {
+  try {
+    const result = await api('POST', '/api/admin/statuses', { statuses: STATUSES });
+    STATUSES = result.statuses;
+    render();
+    notify('Statuslar saqlandi ✅');
+    closeOv('adminOv');
+  } catch(e) {
+    notify('Xatolik: ' + e.message, 'err');
+  }
+}
+
 async function logout() {
   load(true); try { await api('POST', '/api/logout'); } catch {}
   token = null; me = null; lists = []; shared = []; arch = [];
@@ -981,6 +1060,9 @@ function showUser() {
     : `<div class="hdr-av-txt" onclick="openProfile()">${me.name[0].toUpperCase()}</div>`;
   document.getElementById('hdrAv').innerHTML = av;
   if (me.bg) applyBg(me.bg);
+  // Admin tugmasini ko'rsatish
+  const adminBtn = document.getElementById('adminPanelBtn');
+  if (adminBtn) adminBtn.style.display = (me.username === 'ausembayev@gmail.com') ? 'block' : 'none';
 }
 
 async function init() {
@@ -1004,12 +1086,13 @@ async function init() {
 // ══════════════════════════════════════════
 function openProfile() {
   if (!me) return;
-  // Faqat superadmin ga backup tugmasini ko'rsatish
+  // Faqat superadmin ga backup va admin tugmasini ko'rsatish
   const SUPERADMIN = 'ausembayev@gmail.com';
+  const isAdmin = me.username === SUPERADMIN;
   const backupWrap = document.getElementById('backupBtnWrap');
-  if (backupWrap) {
-    backupWrap.style.display = (me && me.username === SUPERADMIN) ? 'block' : 'none';
-  }
+  if (backupWrap) backupWrap.style.display = isAdmin ? 'block' : 'none';
+  const adminBtn = document.getElementById('adminPanelBtn');
+  if (adminBtn) adminBtn.style.display = isAdmin ? 'block' : 'none';
   // Fon rasmi bor bo'lsa o'chirish tugmasini ko'rsatish
   const removeBgBtn = document.getElementById('removeBgBtn');
   if (removeBgBtn) removeBgBtn.style.display = (me && me.bg) ? 'block' : 'none';
@@ -1056,9 +1139,8 @@ async function uploadBg(input) {
 async function loadAll() {
   if (!token) return; load(true);
   try {
+    await loadStatuses();
     [lists, shared, arch] = await Promise.all([api('GET', '/api/lists'), api('GET', '/api/shared-to-me'), api('GET', '/api/archive')]);
-    console.log('[DEBUG] arch loaded:', arch.length, 'items');
-    if (arch.length) console.log('[DEBUG] first arch item:', JSON.stringify({id: arch[0].id, taskText: arch[0].taskText, text: arch[0].text}));
     calcStats(); renderSidebar(); render();
   } catch(e) { notify("Yuklashda xatolik: " + e.message, 'err'); console.error(e); } finally { load(false); }
 }
@@ -1221,12 +1303,8 @@ function mkNode(task, depth, perm) {
             <option value="high"     ${pc === 'high' ? 'selected' : ''}>Yuqori</option>
             <option value="critical" ${pc === 'critical' ? 'selected' : ''}>Kritik</option>
           </select>
-          <select class="ssel ${sc}" onchange="updStat('${task.id}',this.value)">
-            <option value="backlog"  ${sc === 'backlog' ? 'selected' : ''}>Backlog</option>
-            <option value="todo"     ${sc === 'todo' ? 'selected' : ''}>To Do</option>
-            <option value="progress" ${sc === 'progress' ? 'selected' : ''}>In Progress</option>
-            <option value="review"   ${sc === 'review' ? 'selected' : ''}>Review</option>
-            <option value="done"     ${sc === 'done' ? 'selected' : ''}>Done</option>
+          <select class="ssel" style="background:${statusColor(sc)};color:${['progress'].includes(sc)?'#000':'#fff'}" onchange="updStat('${task.id}',this.value); this.style.background=statusColor(this.value); this.style.color=['progress'].includes(this.value)?'#000':'#fff';">
+            ${STATUSES.map(s => `<option value="${s.value}" ${sc === s.value ? 'selected' : ''}>${s.label}</option>`).join('')}
           </select>` : `<span class="t-btn" style="background:#f0f0f0;color:#888;cursor:default">👁 Ko'rish</span>`}
           <button class="t-btn" style="background:#e3f0ff;color:#0066cc" onclick="openDetail('${task.id}','${perm}')" title="Tafsilot, fayl, izoh">🔍 Ko'rish</button>
           ${canEdit ? `<button class="t-btn c-blue" onclick="toggleCI('${task.id}')" title="Quyi topshiriq qo'shish">＋ Quyi</button>` : ''}
