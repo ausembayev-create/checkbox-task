@@ -1030,6 +1030,43 @@ app.post('/api/shared-task/:sid/add-child', auth, (req, res) => {
 // ── SHARED TASK OPERATIONS ──
 // Ulashilgan topshiriqqa quyi topshiriq qo'shish
 
+// ── ADMIN: STATUS SOZLAMALARI ──
+const SUPERADMIN = 'ausembayev@gmail.com';
+const DEFAULT_STATUSES = [
+  { value: 'backlog',  label: 'Backlog',      color: '#6c757d' },
+  { value: 'todo',     label: 'To Do',        color: '#007bff' },
+  { value: 'progress', label: 'In Progress',  color: '#ffc107' },
+  { value: 'review',   label: 'Review',       color: '#17a2b8' },
+  { value: 'done',     label: 'Done',         color: '#28a745' },
+];
+
+function getStatuses(db) {
+  return (db.statuses && db.statuses.length) ? db.statuses : DEFAULT_STATUSES;
+}
+
+// Barcha foydalanuvchilar uchun — statuslar ro'yxati
+app.get('/api/statuses', (req, res) => {
+  const db = loadDB();
+  res.json(getStatuses(db));
+});
+
+// Admin: statuslarni saqlash
+app.post('/api/admin/statuses', auth, (req, res) => {
+  if (req.user.username !== SUPERADMIN) return res.status(403).json({ error: 'Ruxsat etilmagan' });
+  const { statuses } = req.body;
+  if (!Array.isArray(statuses) || !statuses.length) return res.status(400).json({ error: 'Statuslar bo\'sh bo\'lmasin' });
+  // Har bir status: value, label, color
+  const cleaned = statuses.map((s, i) => ({
+    value: (s.value || '').replace(/[^a-z0-9_]/gi, '_').toLowerCase() || `status_${i}`,
+    label: (s.label || '').trim() || `Status ${i+1}`,
+    color: (s.color || '#6c757d')
+  }));
+  const db = loadDB();
+  db.statuses = cleaned;
+  saveDB(db);
+  res.json({ ok: true, statuses: cleaned });
+});
+
 app.get('/api/admin/backup', auth, (req, res) => {
   const db = loadDB();
   // Faqat superadmin emailga ruxsat
